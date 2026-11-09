@@ -1,4 +1,5 @@
 [
   { "name": "Contra", "url": "https://nesroms.blob.core.windows.net/nes/Contra.nes" },
-  { "name": "Tennis", "url": "https://nesroms.blob.core.windows.net/nes/Tennis.nes" }
+  { "name": "Tennis", "url": "https://nesroms.blob.core.windows.net/nes/Tennis.nes" },
+  { "name": "Excitebike", "url": "https://nesroms.blob.core.windows.net/nes/Excitebike.nes" }
 ]
