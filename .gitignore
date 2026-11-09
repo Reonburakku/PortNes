@@ -1,0 +1,6 @@
+# ROMs: material con copyright, nunca se suben
+rom/
+*.nes
+
+node_modules/
+.claude/

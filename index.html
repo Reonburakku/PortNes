@@ -1,0 +1,358 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Contra Web</title>
+<style>
+  :root {
+    --bg: #0d0d10; --panel: #18181d; --text: #e8e8ea; --muted: #8b8b95;
+    --accent: #e0362c; --border: #2a2a32;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  body { display: flex; flex-direction: column; align-items: center; }
+  header { width: 100%; max-width: 1024px; padding: 12px 16px; display: flex;
+    align-items: center; gap: 12px; flex-wrap: wrap; }
+  h1 { font-size: 18px; margin: 0; letter-spacing: .08em; color: var(--accent); }
+  .spacer { flex: 1; }
+  button, label.btn { background: var(--panel); color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 10px; font: inherit; cursor: pointer; }
+  button:hover, label.btn:hover { border-color: var(--accent); }
+  #stage { position: relative; width: 100%; max-width: 1024px; padding: 0 16px; flex: 1;
+    display: flex; align-items: center; justify-content: center; min-height: 0; }
+  canvas { image-rendering: pixelated; image-rendering: crisp-edges; background: #000;
+    width: min(100%, calc((100vh - 140px) * 256 / 240)); aspect-ratio: 256 / 240;
+    border: 1px solid var(--border); }
+  #overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    flex-direction: column; gap: 10px; text-align: center; pointer-events: none; }
+  #overlay .box { background: rgba(0,0,0,.8); padding: 18px 24px; border-radius: 8px; pointer-events: auto;
+    border: 1px solid var(--border); max-width: 90%; }
+  #overlay.hidden { display: none; }
+  footer { width: 100%; max-width: 1024px; padding: 8px 16px 14px; color: var(--muted); font-size: 12px; }
+  kbd { background: var(--panel); border: 1px solid var(--border); border-radius: 4px; padding: 0 5px;
+    font: 12px ui-monospace, monospace; color: var(--text); }
+  #toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--panel);
+    border: 1px solid var(--border); padding: 8px 14px; border-radius: 6px; opacity: 0; transition: opacity .2s; }
+  #toast.show { opacity: 1; }
+
+  /* Controles táctiles */
+  #touch { display: none; width: 100%; max-width: 600px; padding: 10px 16px 20px;
+    justify-content: space-between; align-items: center; user-select: none; -webkit-user-select: none; }
+  @media (pointer: coarse) { #touch { display: flex; } footer { display: none; } }
+  .dpad { display: grid; grid-template: repeat(3, 52px) / repeat(3, 52px); gap: 2px; }
+  .tb { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; display: flex;
+    align-items: center; justify-content: center; font-weight: 600; touch-action: none; }
+  .tb.on { background: var(--accent); }
+  .mid { display: flex; flex-direction: column; gap: 8px; }
+  .mid .tb { padding: 6px 12px; font-size: 11px; }
+  .ab { display: flex; gap: 14px; }
+  .ab .tb { width: 64px; height: 64px; border-radius: 50%; font-size: 18px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>CONTRA</h1>
+  <span class="spacer"></span>
+  <button id="btnPause" title="P">Pausa</button>
+  <button id="btnReset">Reset</button>
+  <button id="btnSave" title="F5">Guardar</button>
+  <button id="btnLoad" title="F9">Cargar</button>
+  <button id="btnMute" title="M">Sonido: on</button>
+  <button id="btnFull" title="F">Pantalla completa</button>
+  <label class="btn">ROM… <input id="fileInput" type="file" accept=".nes" hidden></label>
+  <button id="btnForget" title="Borra la ROM guardada en este navegador">Olvidar ROM</button>
+</header>
+
+<div id="stage">
+  <canvas id="screen" width="256" height="240"></canvas>
+  <div id="overlay"><div class="box" id="overlayText">Cargando…</div></div>
+</div>
+
+<div id="touch">
+  <div class="dpad">
+    <span></span><div class="tb" data-btn="UP">▲</div><span></span>
+    <div class="tb" data-btn="LEFT">◀</div><span></span><div class="tb" data-btn="RIGHT">▶</div>
+    <span></span><div class="tb" data-btn="DOWN">▼</div><span></span>
+  </div>
+  <div class="mid">
+    <div class="tb" data-btn="SELECT">SELECT</div>
+    <div class="tb" data-btn="START">START</div>
+  </div>
+  <div class="ab">
+    <div class="tb" data-btn="B">B</div>
+    <div class="tb" data-btn="A">A</div>
+  </div>
+</div>
+
+<footer>
+  <b>Jugador 1:</b> mover <kbd>←↑→↓</kbd> / <kbd>WASD</kbd> · disparar (B) <kbd>J</kbd>/<kbd>Z</kbd> · saltar (A) <kbd>K</kbd>/<kbd>X</kbd> ·
+  <kbd>Enter</kbd> Start · <kbd>Shift</kbd> Select ·
+  <b>Jugador 2:</b> <kbd>Num 8456</kbd> mover, <kbd>Num 1</kbd> disparar, <kbd>Num 2</kbd> saltar ·
+  <kbd>P</kbd> pausa · <kbd>F5</kbd>/<kbd>F9</kbd> guardar/cargar · <kbd>M</kbd> sonido · <kbd>F</kbd> pantalla completa ·
+  Mandos USB/Bluetooth compatibles (Gamepad API).
+</footer>
+<div id="toast"></div>
+
+<script src="vendor/jsnes.min.js"></script>
+<script>
+(() => {
+  'use strict';
+  const W = 256, H = 240;
+  const FRAME_MS = 1000 / 60.0988; // NTSC
+  const B = jsnes.Controller;
+
+  // ---------- Vídeo ----------
+  const canvas = document.getElementById('screen');
+  const ctx = canvas.getContext('2d');
+  const image = ctx.createImageData(W, H);
+  const buf32 = new Uint32Array(image.data.buffer);
+
+  // ---------- Audio ----------
+  const AUDIO_BUF = 8192, AUDIO_MASK = AUDIO_BUF - 1;
+  const audioL = new Float32Array(AUDIO_BUF), audioR = new Float32Array(AUDIO_BUF);
+  let audioW = 0, audioR_ = 0, audioCtx = null, gain = null, muted = false;
+
+  function initAudio() {
+    if (audioCtx) { if (audioCtx.state === 'suspended') audioCtx.resume(); return; }
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    audioCtx = new AC();
+    gain = audioCtx.createGain();
+    gain.gain.value = muted ? 0 : 1;
+    const node = audioCtx.createScriptProcessor(1024, 0, 2);
+    node.onaudioprocess = (e) => {
+      const outL = e.outputBuffer.getChannelData(0), outR = e.outputBuffer.getChannelData(1);
+      const n = outL.length;
+      for (let i = 0; i < n; i++) {
+        if (audioR_ !== audioW) {
+          outL[i] = audioL[audioR_]; outR[i] = audioR[audioR_];
+          audioR_ = (audioR_ + 1) & AUDIO_MASK;
+        } else { outL[i] = outR[i] = 0; }
+      }
+    };
+    node.connect(gain); gain.connect(audioCtx.destination);
+    // Ajustar la APU de jsnes a la frecuencia real del dispositivo (44.1k / 48k…)
+    const rate = audioCtx.sampleRate;
+    nes.opts.sampleRate = rate;
+    nes.papu.sampleRate = rate;
+    nes.papu.sampleTimerMax = Math.floor((1024.0 * 1789772.5 * nes.opts.preferredFrameRate) / (rate * 60.0));
+  }
+
+  const nes = new jsnes.NES({
+    sampleRate: 44100,
+    onFrame(fb) { for (let i = 0; i < W * H; i++) buf32[i] = 0xFF000000 | fb[i]; },
+    onAudioSample(l, r) {
+      const next = (audioW + 1) & AUDIO_MASK;
+      if (next === audioR_) return; // buffer lleno: descartar
+      audioL[audioW] = l; audioR[audioW] = r; audioW = next;
+    },
+  });
+
+  // ---------- Entrada con "latch": toda pulsación dura al menos 1 frame ----------
+  const fresh = new Set(), pendingUp = new Set();
+  function press(p, b) { const k = p * 8 + b; pendingUp.delete(k); fresh.add(k); nes.buttonDown(p, b); }
+  function release(p, b) { const k = p * 8 + b; if (fresh.has(k)) pendingUp.add(k); else nes.buttonUp(p, b); }
+  function flushReleases() {
+    fresh.clear();
+    for (const k of pendingUp) nes.buttonUp(k >> 3, k & 7);
+    pendingUp.clear();
+  }
+
+  // ---------- Bucle principal ----------
+  let running = false, paused = false, last = 0, acc = 0;
+  function loop(t) {
+    requestAnimationFrame(loop);
+    if (!running || paused) { last = t; return; }
+    acc += Math.min(t - last, 100); last = t;
+    pollGamepads();
+    let ran = false;
+    while (acc >= FRAME_MS) { nes.frame(); flushReleases(); acc -= FRAME_MS; ran = true; }
+    if (ran) ctx.putImageData(image, 0, 0);
+  }
+  requestAnimationFrame(loop);
+
+  // ---------- Carga de ROM ----------
+  const overlay = document.getElementById('overlay'), overlayText = document.getElementById('overlayText');
+  function showOverlay(html) { overlayText.innerHTML = html; overlay.classList.remove('hidden'); }
+  function hideOverlay() { overlay.classList.add('hidden'); }
+
+  function bytesToBinaryString(bytes) {
+    let s = '';
+    for (let i = 0; i < bytes.length; i += 0x8000)
+      s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    return s;
+  }
+
+  let romKey = 'contra';
+  function startRom(bytes, name) {
+    if (bytes[0] !== 0x4E || bytes[1] !== 0x45 || bytes[2] !== 0x53 || bytes[3] !== 0x1A) {
+      showOverlay('El archivo no es una ROM iNES válida.'); return;
+    }
+    try { nes.loadROM(bytesToBinaryString(bytes)); }
+    catch (e) { showOverlay('No se pudo cargar la ROM: ' + e.message); return; }
+    romKey = name || 'rom';
+    running = true; paused = false; acc = 0;
+    showOverlay('<b>Pulsa cualquier tecla o toca la pantalla para empezar</b><br><small>(los navegadores exigen una interacción para activar el sonido)</small>');
+    const go = () => { initAudio(); hideOverlay();
+      ['keydown','pointerdown'].forEach(ev => window.removeEventListener(ev, go)); };
+    ['keydown','pointerdown'].forEach(ev => window.addEventListener(ev, go));
+  }
+
+  // ---------- ROM recordada en este navegador (IndexedDB; nunca sale del equipo) ----------
+  function idb() {
+    return new Promise((res, rej) => {
+      const req = indexedDB.open('contra-web', 1);
+      req.onupgradeneeded = () => req.result.createObjectStore('roms');
+      req.onsuccess = () => res(req.result);
+      req.onerror = () => rej(req.error);
+    });
+  }
+  function idbOp(mode, fn) {
+    return idb().then(db => new Promise((res, rej) => {
+      const tx = db.transaction('roms', mode), r = fn(tx.objectStore('roms'));
+      tx.oncomplete = () => res(r && r.result);
+      tx.onerror = () => rej(tx.error);
+    }));
+  }
+  const storeRom = (bytes, name) => idbOp('readwrite', s => s.put({ bytes, name }, 'last')).catch(() => {});
+  const getStoredRom = () => idbOp('readonly', s => s.get('last')).catch(() => null);
+  const forgetRom = () => idbOp('readwrite', s => s.delete('last')).catch(() => {});
+
+  const NO_ROM_MSG = '<b>Carga tu ROM de Contra (.nes)</b><br>Arrástrala aquí o usa el botón <b>ROM…</b><br>' +
+    '<small>La ROM no se incluye por motivos de copyright. Se guarda solo en tu navegador para la próxima vez.</small>';
+
+  // Orden: rom/contra.nes junto a la página (uso local) → ROM recordada → pedir archivo
+  fetch('rom/contra.nes')
+    .then(r => { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); })
+    .then(ab => startRom(new Uint8Array(ab), 'contra'))
+    .catch(() => getStoredRom().then(rec => {
+      if (rec && rec.bytes) startRom(new Uint8Array(rec.bytes), rec.name);
+      else showOverlay(NO_ROM_MSG);
+    }));
+
+  function loadFile(file) {
+    if (!file) return;
+    file.arrayBuffer().then(ab => {
+      const bytes = new Uint8Array(ab), name = file.name.replace(/\.nes$/i, '');
+      startRom(bytes, name);
+      if (running) storeRom(bytes, name);
+    });
+  }
+  document.getElementById('btnForget').onclick = () => forgetRom().then(() => toast('ROM olvidada en este navegador'));
+  document.getElementById('fileInput').addEventListener('change', e => loadFile(e.target.files[0]));
+  window.addEventListener('dragover', e => e.preventDefault());
+  window.addEventListener('drop', e => { e.preventDefault(); loadFile(e.dataTransfer.files[0]); });
+
+  // ---------- Teclado ----------
+  const KEYMAP = {
+    ArrowUp: [1, B.BUTTON_UP], ArrowDown: [1, B.BUTTON_DOWN], ArrowLeft: [1, B.BUTTON_LEFT], ArrowRight: [1, B.BUTTON_RIGHT],
+    KeyW: [1, B.BUTTON_UP], KeyS: [1, B.BUTTON_DOWN], KeyA: [1, B.BUTTON_LEFT], KeyD: [1, B.BUTTON_RIGHT],
+    KeyJ: [1, B.BUTTON_B], KeyZ: [1, B.BUTTON_B], KeyK: [1, B.BUTTON_A], KeyX: [1, B.BUTTON_A],
+    Enter: [1, B.BUTTON_START], ShiftLeft: [1, B.BUTTON_SELECT], ShiftRight: [1, B.BUTTON_SELECT],
+    Numpad8: [2, B.BUTTON_UP], Numpad5: [2, B.BUTTON_DOWN], Numpad4: [2, B.BUTTON_LEFT], Numpad6: [2, B.BUTTON_RIGHT],
+    Numpad1: [2, B.BUTTON_B], Numpad2: [2, B.BUTTON_A], NumpadEnter: [2, B.BUTTON_START], NumpadAdd: [2, B.BUTTON_SELECT],
+  };
+  window.addEventListener('keydown', e => {
+    const m = KEYMAP[e.code];
+    if (m) { e.preventDefault(); if (!e.repeat) press(m[0], m[1]); return; }
+    if (e.repeat) return;
+    switch (e.code) {
+      case 'KeyP': togglePause(); break;
+      case 'KeyM': toggleMute(); break;
+      case 'KeyF': toggleFull(); break;
+      case 'F5': e.preventDefault(); saveState(); break;
+      case 'F9': e.preventDefault(); loadState(); break;
+    }
+  });
+  window.addEventListener('keyup', e => { const m = KEYMAP[e.code]; if (m) { e.preventDefault(); release(m[0], m[1]); } });
+  window.addEventListener('blur', releaseAll);
+  function releaseAll() { for (let p = 1; p <= 2; p++) for (let b = 0; b < 8; b++) nes.buttonUp(p, b); }
+
+  // ---------- Mandos (Gamepad API, mapeo estándar) ----------
+  const padState = [new Array(8).fill(false), new Array(8).fill(false)];
+  function pollGamepads() {
+    const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+    let idx = 0;
+    for (const gp of pads) {
+      if (!gp || idx > 1) continue;
+      const btn = i => !!(gp.buttons[i] && gp.buttons[i].pressed);
+      const ax = gp.axes[0] || 0, ay = gp.axes[1] || 0, T = 0.5;
+      const s = [];
+      s[B.BUTTON_A] = btn(0) || btn(3);           // A / Y  -> saltar
+      s[B.BUTTON_B] = btn(2) || btn(1);           // X / B  -> disparar
+      s[B.BUTTON_SELECT] = btn(8);
+      s[B.BUTTON_START] = btn(9);
+      s[B.BUTTON_UP] = btn(12) || ay < -T;
+      s[B.BUTTON_DOWN] = btn(13) || ay > T;
+      s[B.BUTTON_LEFT] = btn(14) || ax < -T;
+      s[B.BUTTON_RIGHT] = btn(15) || ax > T;
+      for (let b = 0; b < 8; b++) {
+        if (s[b] !== padState[idx][b]) {
+          padState[idx][b] = s[b];
+          s[b] ? press(idx + 1, b) : release(idx + 1, b);
+        }
+      }
+      idx++;
+    }
+  }
+
+  // ---------- Controles táctiles ----------
+  document.querySelectorAll('#touch .tb').forEach(el => {
+    const b = B['BUTTON_' + el.dataset.btn];
+    const down = e => { e.preventDefault(); el.classList.add('on'); press(1, b); };
+    const up = e => { e.preventDefault(); el.classList.remove('on'); release(1, b); };
+    el.addEventListener('pointerdown', down);
+    el.addEventListener('pointerup', up);
+    el.addEventListener('pointercancel', up);
+    el.addEventListener('pointerleave', up);
+  });
+
+  // ---------- Opciones ----------
+  const toastEl = document.getElementById('toast');
+  let toastT;
+  function toast(msg) { toastEl.textContent = msg; toastEl.classList.add('show');
+    clearTimeout(toastT); toastT = setTimeout(() => toastEl.classList.remove('show'), 1400); }
+
+  function togglePause() {
+    if (!running) return;
+    paused = !paused;
+    document.getElementById('btnPause').textContent = paused ? 'Continuar' : 'Pausa';
+    if (audioCtx) paused ? audioCtx.suspend() : audioCtx.resume();
+    toast(paused ? 'Pausa' : 'Continuar');
+  }
+  function toggleMute() {
+    muted = !muted;
+    if (gain) gain.gain.value = muted ? 0 : 1;
+    document.getElementById('btnMute').textContent = 'Sonido: ' + (muted ? 'off' : 'on');
+  }
+  function toggleFull() {
+    if (document.fullscreenElement) document.exitFullscreen();
+    else canvas.requestFullscreen && canvas.requestFullscreen();
+  }
+  function saveState() {
+    if (!running) return;
+    try { localStorage.setItem('nes-state-' + romKey, JSON.stringify(nes.toJSON())); toast('Partida guardada'); }
+    catch (e) { toast('No se pudo guardar: ' + e.message); }
+  }
+  function loadState() {
+    if (!running) return;
+    try {
+      const s = localStorage.getItem('nes-state-' + romKey);
+      if (!s) { toast('No hay partida guardada'); return; }
+      nes.fromJSON(JSON.parse(s)); toast('Partida cargada');
+    } catch (e) { toast('No se pudo cargar: ' + e.message); }
+  }
+
+  document.getElementById('btnPause').onclick = togglePause;
+  document.getElementById('btnReset').onclick = () => { if (running) { nes.reloadROM(); toast('Reset'); } };
+  document.getElementById('btnSave').onclick = saveState;
+  document.getElementById('btnLoad').onclick = loadState;
+  document.getElementById('btnMute').onclick = () => { initAudio(); toggleMute(); };
+  document.getElementById('btnFull').onclick = toggleFull;
+  document.addEventListener('visibilitychange', () => { if (document.hidden) releaseAll(); });
+})();
+</script>
+</body>
+</html>
