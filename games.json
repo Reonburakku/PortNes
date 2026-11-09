@@ -1,5 +1,7 @@
 [
   { "name": "Contra", "url": "https://nesroms.blob.core.windows.net/nes/Contra.nes" },
   { "name": "Tennis", "url": "https://nesroms.blob.core.windows.net/nes/Tennis.nes" },
-  { "name": "Excitebike", "url": "https://nesroms.blob.core.windows.net/nes/Excitebike.nes" }
+  { "name": "Excitebike", "url": "https://nesroms.blob.core.windows.net/nes/Excitebike.nes" },
+  { "name": "Super Mario Bros.", "url": "https://nesroms.blob.core.windows.net/nes/Super-Mario-Bros.nes" },
+  { "name": "Super Mario Bros. 3", "url": "https://nesroms.blob.core.windows.net/nes/Super-Mario-Bros.-3.nes" }
 ]
