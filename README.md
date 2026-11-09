@@ -1,18 +1,20 @@
-# Contra (NES) en el navegador
+# PortNes
 
-Emulador NES en JavaScript ([jsnes](https://github.com/bfirsh/jsnes)) que carga `rom/contra.nes` y lo ejecuta en un `<canvas>`.
+Emulador de NES para el navegador, basado en [jsnes](https://github.com/bfirsh/jsnes), con modo online para 2 jugadores.
 
-## Jugar online (GitHub Pages)
+**Jugar:** https://reonburakku.github.io/PortNes/
 
-Abre la página y carga tu propia ROM de Contra (`.nes`) con el botón **ROM…** o arrastrándola.
-La ROM **no se incluye** en este repositorio (copyright de Konami). Se guarda solo en tu navegador (IndexedDB)
+## Cargar un juego
+
+Abre la página y carga tu propia ROM de NES (`.nes`) con el botón **ROM…** o arrastrándola.
+No se incluye ninguna ROM en este repositorio (copyright). Se guarda solo en tu navegador (IndexedDB)
 para no tener que cargarla cada vez; **Olvidar ROM** la borra.
 
 ## Partida online (2 jugadores)
 
 1. **Jugador 1:** pulsa **Online → Crear partida**. Aparece un código de 5 letras y un enlace.
 2. **Jugador 2:** abre el enlace, o pulsa **Online**, escribe el código y **Unirse como Jugador 2**.
-3. La consola se reinicia en ambos navegadores y el Jugador 1 elige **2 PLAYERS** en el título.
+3. La consola se reinicia en ambos navegadores y el Jugador 1 elige el modo de 2 jugadores en el menú del juego.
 
 Cada uno juega con los controles del Jugador 1 (teclado, mando o táctil). Ambos necesitan **la misma ROM**
 (se comprueba con SHA-256); la ROM nunca se envía.
@@ -28,7 +30,7 @@ guardar/cargar se desactivan durante la partida online.
 
 ## Jugar en local
 
-Copia tu ROM a `rom/contra.nes` (la carpeta está en `.gitignore`) y ejecuta `start.bat`, o:
+Opcionalmente, copia una ROM a `rom/contra.nes` para que se cargue sola (la carpeta está en `.gitignore`), y ejecuta `start.bat`, o:
 
 ```
 node server.js 8080

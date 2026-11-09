@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
-<title>Contra Web</title>
+<title>PortNes</title>
 <style>
   :root {
     --bg: #0d0d10; --panel: #18181d; --text: #e8e8ea; --muted: #8b8b95;
@@ -84,7 +84,7 @@
 </head>
 <body>
 <header>
-  <h1>CONTRA</h1>
+  <h1>PortNes</h1>
   <button id="btnOnline" class="primary">Online</button>
   <span id="netStatus" hidden></span>
   <span class="spacer"></span>
@@ -136,8 +136,8 @@
     <h2 id="netTitle">Partida online</h2>
 
     <div id="netIdle">
-      <p class="muted">Cada jugador necesita tener cargada su propia ROM de Contra. Quien crea la partida es el
-        Jugador 1 y elige «2 PLAYERS» en el menú.</p>
+      <p class="muted">Ambos jugadores necesitan tener cargada la misma ROM. Quien crea la partida es el
+        Jugador 1 y elige el modo de 2 jugadores en el menú del juego.</p>
       <p style="margin-top:12px"><button id="btnHost" class="primary" style="width:100%">Crear partida</button></p>
       <div class="sep" style="margin:12px 0">o</div>
       <div class="row">
@@ -303,8 +303,8 @@
   const getStoredRom = () => idbOp('readonly', s => s.get('last')).catch(() => null);
   const forgetRom = () => idbOp('readwrite', s => s.delete('last')).catch(() => {});
 
-  const NO_ROM_MSG = '<b>Carga tu ROM de Contra (.nes)</b><br>Arrástrala aquí o usa el botón <b>ROM…</b><br>' +
-    '<small>La ROM no se incluye por motivos de copyright. Se guarda solo en tu navegador para la próxima vez.</small>';
+  const NO_ROM_MSG = '<b>Carga una ROM de NES (.nes)</b><br>Arrástrala aquí o usa el botón <b>ROM…</b><br>' +
+    '<small>Las ROM no se incluyen por motivos de copyright. Se guarda solo en tu navegador para la próxima vez.</small>';
 
   let inviteCode = (new URLSearchParams(location.search).get('sala') || '').toUpperCase().replace(/[^A-Z0-9]/g, '') || null;
 
@@ -555,7 +555,7 @@
     if (net.role !== 'host') return;
     const mine = await romHash;
     if (m.rom !== mine) {
-      send({ t: 'err', msg: 'Tu ROM es distinta a la del anfitrión. Ambos necesitáis exactamente la misma ROM de Contra (USA).' });
+      send({ t: 'err', msg: 'Tu ROM es distinta a la del anfitrión. Ambos necesitáis exactamente la misma ROM.' });
       setTimeout(() => { if (net.conn) net.conn.close(); }, 300);
       $('waitMsg').textContent = 'Un jugador intentó unirse con una ROM distinta. Esperando al Jugador 2…';
       return;
@@ -726,8 +726,8 @@
     $('netLive').hidden = !(net.active || net.role === 'guest');
     if (net.active) $('liveMsg').innerHTML = 'Partida en curso como <b>Jugador ' + net.me + '</b>. Retardo de entrada: ' +
       net.delay + ' frames, ping ' + Math.round(net.rtt) + ' ms.' +
-      (net.me === 1 ? '<br><span class="muted">Elige «2 PLAYERS» en el menú del título.</span>' :
-                      '<br><span class="muted">El Jugador 1 elige el modo en el título.</span>');
+      (net.me === 1 ? '<br><span class="muted">Elige el modo de 2 jugadores en el menú del juego.</span>' :
+                      '<br><span class="muted">El Jugador 1 elige el modo en el menú del juego.</span>');
     $('btnLeave').hidden = !net.role;
     $('btnOnline').textContent = net.role ? 'Online ●' : 'Online';
     for (const id of ['btnPause', 'btnReset', 'btnSave', 'btnLoad']) $(id).disabled = !!net.role;
