@@ -14,7 +14,7 @@
   html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
     font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
   body { display: flex; flex-direction: column; align-items: center; }
-  header { width: 100%; max-width: 1024px; padding: 12px 16px; display: flex;
+  header { width: 100%; max-width: 1320px; padding: 12px 16px; display: flex;
     align-items: center; gap: 8px; flex-wrap: wrap; }
   h1 { font-size: 18px; margin: 0 8px 0 0; letter-spacing: .08em; color: var(--accent); }
   .spacer { flex: 1; }
@@ -36,17 +36,40 @@
   button:disabled { opacity: .45; cursor: not-allowed; }
   #netStatus { font-size: 12px; padding: 4px 8px; border-radius: 999px; border: 1px solid var(--ok); color: var(--ok); }
   #netStatus.wait { border-color: #d29922; color: #d29922; }
-  #stage { position: relative; width: 100%; max-width: 1024px; padding: 0 16px; flex: 1;
-    display: flex; align-items: center; justify-content: center; min-height: 0; }
-  canvas { image-rendering: pixelated; image-rendering: crisp-edges; background: #000;
-    width: min(100%, calc((100vh - 140px) * 256 / 240)); aspect-ratio: 256 / 240;
+  /* Zona principal: juego a la izquierda, controles a la derecha. El canvas se ajusta al
+     espacio libre real (container queries), así nunca tapa la barra ni el panel. */
+  main { width: 100%; max-width: 1320px; flex: 1; min-height: 0; display: flex; gap: 16px; padding: 0 16px 16px; }
+  #stage { position: relative; flex: 1; min-width: 0; min-height: 0; container-type: size;
+    display: flex; align-items: center; justify-content: center; }
+  canvas { image-rendering: pixelated; image-rendering: crisp-edges; background: #000; display: block;
+    width: min(100cqw, 100cqh * 256 / 240); height: auto; aspect-ratio: 256 / 240;
     border: 1px solid var(--border); }
+
+  /* Panel de controles */
+  #help { flex: none; width: 270px; overflow-y: auto; background: var(--panel); border: 1px solid var(--border);
+    border-radius: 10px; padding: 4px 14px 14px; font-size: 13px; }
+  #help h2 { font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted);
+    margin: 12px 0 2px; }
+  #help ul { list-style: none; margin: 0; padding: 0; }
+  #help li { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 4px 0;
+    border-bottom: 1px solid var(--border); }
+  #help li:last-child { border-bottom: 0; }
+  #help li .keys { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 3px; }
+  #help p { margin: 10px 0 0; color: var(--muted); font-size: 12px; }
+
+  /* Pantallas estrechas: panel debajo del juego y la página puede desplazarse */
+  @media (max-width: 820px) {
+    html, body { height: auto; min-height: 100%; }
+    main { flex-direction: column; flex: none; }
+    #stage { container-type: inline-size; flex: none; }
+    canvas { width: 100%; }
+    #help { width: auto; overflow: visible; }
+  }
   #overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
     flex-direction: column; gap: 10px; text-align: center; pointer-events: none; }
   #overlay .box { background: rgba(0,0,0,.8); padding: 18px 24px; border-radius: 8px; pointer-events: auto;
     border: 1px solid var(--border); max-width: 90%; }
   #overlay.hidden { display: none; }
-  footer { width: 100%; max-width: 1024px; padding: 8px 16px 14px; color: var(--muted); font-size: 12px; }
   kbd { background: var(--panel); border: 1px solid var(--border); border-radius: 4px; padding: 0 5px;
     font: 12px ui-monospace, monospace; color: var(--text); }
   #toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--panel);
@@ -75,17 +98,17 @@
   .err { color: #ff7b72; font-size: 13px; min-height: 1em; }
 
   /* Controles táctiles */
-  #touch { display: none; width: 100%; max-width: 600px; padding: 10px 16px 20px;
+  #touch { display: none; width: 100%; max-width: 600px; padding: 10px 16px 20px; gap: 8px;
     justify-content: space-between; align-items: center; user-select: none; -webkit-user-select: none; }
-  @media (pointer: coarse) { #touch { display: flex; } footer { display: none; } }
-  .dpad { display: grid; grid-template: repeat(3, 52px) / repeat(3, 52px); gap: 2px; }
+  @media (pointer: coarse) { #touch { display: flex; } #help { display: none; } }
+  .dpad { display: grid; grid-template: repeat(3, clamp(40px, 12vw, 52px)) / repeat(3, clamp(40px, 12vw, 52px)); gap: 2px; }
   .tb { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; display: flex;
     align-items: center; justify-content: center; font-weight: 600; touch-action: none; }
   .tb.on { background: var(--accent); }
   .mid { display: flex; flex-direction: column; gap: 8px; }
   .mid .tb { padding: 6px 12px; font-size: 11px; }
-  .ab { display: flex; gap: 14px; }
-  .ab .tb { width: 64px; height: 64px; border-radius: 50%; font-size: 18px; }
+  .ab { display: flex; gap: clamp(8px, 3vw, 14px); }
+  .ab .tb { width: clamp(50px, 15vw, 64px); height: clamp(50px, 15vw, 64px); border-radius: 50%; font-size: 18px; }
 </style>
 </head>
 <body>
@@ -111,10 +134,41 @@
   <button id="btnForget" title="Borra la ROM guardada en este navegador">Olvidar ROM</button>
 </header>
 
-<div id="stage">
-  <canvas id="screen" width="256" height="240"></canvas>
-  <div id="overlay"><div class="box" id="overlayText">Cargando…</div></div>
-</div>
+<main>
+  <div id="stage">
+    <canvas id="screen" width="256" height="240"></canvas>
+    <div id="overlay"><div class="box" id="overlayText">Cargando…</div></div>
+  </div>
+
+  <aside id="help" aria-label="Controles">
+    <h2>Jugador 1</h2>
+    <ul>
+      <li><span>Mover</span><span class="keys"><kbd>←↑→↓</kbd><kbd>WASD</kbd></span></li>
+      <li><span>Botón B</span><span class="keys"><kbd>J</kbd><kbd>Z</kbd></span></li>
+      <li><span>Botón A</span><span class="keys"><kbd>K</kbd><kbd>X</kbd></span></li>
+      <li><span>Start</span><span class="keys"><kbd>Enter</kbd></span></li>
+      <li><span>Select</span><span class="keys"><kbd>Shift</kbd></span></li>
+    </ul>
+    <h2>Jugador 2</h2>
+    <ul>
+      <li><span>Mover</span><span class="keys"><kbd>Num 8 4 5 6</kbd></span></li>
+      <li><span>Botón B</span><span class="keys"><kbd>Num 1</kbd></span></li>
+      <li><span>Botón A</span><span class="keys"><kbd>Num 2</kbd></span></li>
+      <li><span>Start</span><span class="keys"><kbd>Num Enter</kbd></span></li>
+      <li><span>Select</span><span class="keys"><kbd>Num +</kbd></span></li>
+    </ul>
+    <h2>Opciones</h2>
+    <ul>
+      <li><span>Pausa</span><span class="keys"><kbd>P</kbd></span></li>
+      <li><span>Guardar partida</span><span class="keys"><kbd>F5</kbd></span></li>
+      <li><span>Cargar partida</span><span class="keys"><kbd>F9</kbd></span></li>
+      <li><span>Silenciar</span><span class="keys"><kbd>M</kbd></span></li>
+      <li><span>Volumen</span><span class="keys"><kbd>-</kbd><kbd>+</kbd></span></li>
+      <li><span>Pantalla completa</span><span class="keys"><kbd>F</kbd></span></li>
+    </ul>
+    <p>Mandos USB/Bluetooth compatibles. En partida online, cada jugador usa los controles del Jugador 1.</p>
+  </aside>
+</main>
 
 <div id="touch">
   <div class="dpad">
@@ -132,13 +186,6 @@
   </div>
 </div>
 
-<footer>
-  <b>Jugador 1:</b> mover <kbd>←↑→↓</kbd> / <kbd>WASD</kbd> · disparar (B) <kbd>J</kbd>/<kbd>Z</kbd> · saltar (A) <kbd>K</kbd>/<kbd>X</kbd> ·
-  <kbd>Enter</kbd> Start · <kbd>Shift</kbd> Select ·
-  <b>Jugador 2:</b> <kbd>Num 8456</kbd> mover, <kbd>Num 1</kbd> disparar, <kbd>Num 2</kbd> saltar ·
-  <kbd>P</kbd> pausa · <kbd>F5</kbd>/<kbd>F9</kbd> guardar/cargar · <kbd>M</kbd> silenciar · <kbd>-</kbd>/<kbd>+</kbd> volumen · <kbd>F</kbd> pantalla completa ·
-  Mandos USB/Bluetooth compatibles (Gamepad API). En partida online, cada jugador usa los controles del Jugador 1.
-</footer>
 
 <div id="netPanel" hidden>
   <div class="card" role="dialog" aria-labelledby="netTitle">
