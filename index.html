@@ -21,6 +21,11 @@
   button, label.btn { background: var(--panel); color: var(--text); border: 1px solid var(--border);
     border-radius: 6px; padding: 6px 10px; font: inherit; cursor: pointer; }
   button:hover, label.btn:hover { border-color: var(--accent); }
+  .vol { display: flex; align-items: center; gap: 6px; background: var(--panel); border: 1px solid var(--border);
+    border-radius: 6px; padding: 2px 10px 2px 2px; }
+  .vol button { border: 0; background: transparent; padding: 4px 6px; font-size: 15px; line-height: 1; }
+  .vol input[type=range] { width: 90px; accent-color: var(--accent); cursor: pointer; margin: 0; }
+  #volLabel { font: 12px ui-monospace, monospace; color: var(--muted); min-width: 3.5ch; text-align: right; }
   button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
   button:disabled { opacity: .45; cursor: not-allowed; }
   #netStatus { font-size: 12px; padding: 4px 8px; border-radius: 999px; border: 1px solid var(--ok); color: var(--ok); }
@@ -87,7 +92,11 @@
   <button id="btnReset">Reset</button>
   <button id="btnSave" title="F5">Guardar</button>
   <button id="btnLoad" title="F9">Cargar</button>
-  <button id="btnMute" title="M">Sonido: on</button>
+  <div class="vol" title="Volumen (M silenciar · - / + ajustar)">
+    <button id="btnMute" aria-label="Silenciar">🔊</button>
+    <input id="volume" type="range" min="0" max="100" step="1" value="80" aria-label="Volumen">
+    <span id="volLabel">80%</span>
+  </div>
   <button id="btnFull" title="F">Pantalla completa</button>
   <label class="btn">ROM… <input id="fileInput" type="file" accept=".nes" hidden></label>
   <button id="btnForget" title="Borra la ROM guardada en este navegador">Olvidar ROM</button>
@@ -118,7 +127,7 @@
   <b>Jugador 1:</b> mover <kbd>←↑→↓</kbd> / <kbd>WASD</kbd> · disparar (B) <kbd>J</kbd>/<kbd>Z</kbd> · saltar (A) <kbd>K</kbd>/<kbd>X</kbd> ·
   <kbd>Enter</kbd> Start · <kbd>Shift</kbd> Select ·
   <b>Jugador 2:</b> <kbd>Num 8456</kbd> mover, <kbd>Num 1</kbd> disparar, <kbd>Num 2</kbd> saltar ·
-  <kbd>P</kbd> pausa · <kbd>F5</kbd>/<kbd>F9</kbd> guardar/cargar · <kbd>M</kbd> sonido · <kbd>F</kbd> pantalla completa ·
+  <kbd>P</kbd> pausa · <kbd>F5</kbd>/<kbd>F9</kbd> guardar/cargar · <kbd>M</kbd> silenciar · <kbd>-</kbd>/<kbd>+</kbd> volumen · <kbd>F</kbd> pantalla completa ·
   Mandos USB/Bluetooth compatibles (Gamepad API). En partida online, cada jugador usa los controles del Jugador 1.
 </footer>
 
@@ -185,7 +194,7 @@
     try { audioCtx = new AC({ sampleRate: EMU_RATE }); } catch (e) { audioCtx = new AC(); }
     const step = EMU_RATE / audioCtx.sampleRate;
     gain = audioCtx.createGain();
-    gain.gain.value = muted ? 0 : 1;
+    gain.gain.value = outputGain();
     const node = audioCtx.createScriptProcessor(1024, 0, 2);
     node.onaudioprocess = (e) => {
       const outL = e.outputBuffer.getChannelData(0), outR = e.outputBuffer.getChannelData(1);
@@ -340,6 +349,8 @@
     switch (e.code) {
       case 'KeyP': togglePause(); break;
       case 'KeyM': toggleMute(); break;
+      case 'Minus': setVolume(volume - 10); toast('Volumen ' + volume + '%'); break;
+      case 'Equal': setVolume(volume + 10); toast('Volumen ' + volume + '%'); break;
       case 'KeyF': toggleFull(); break;
       case 'F5': e.preventDefault(); saveState(); break;
       case 'F9': e.preventDefault(); loadState(); break;
@@ -749,11 +760,28 @@
     if (audioCtx) paused ? audioCtx.suspend() : audioCtx.resume();
     toast(paused ? 'Pausa' : 'Continuar');
   }
-  function toggleMute() {
-    muted = !muted;
-    if (gain) gain.gain.value = muted ? 0 : 1;
-    $('btnMute').textContent = 'Sonido: ' + (muted ? 'off' : 'on');
+  // ---------- Volumen (0–100, curva cuadrática para que el control sea más natural al oído) ----------
+  let volume = 80;
+  function outputGain() { return muted ? 0 : Math.pow(volume / 100, 2); }
+  function applyVolume() {
+    if (gain) gain.gain.setTargetAtTime(outputGain(), audioCtx.currentTime, 0.015);
+    const silent = muted || volume === 0;
+    $('btnMute').textContent = silent ? '🔇' : volume < 50 ? '🔉' : '🔊';
+    $('btnMute').setAttribute('aria-label', muted ? 'Activar sonido' : 'Silenciar');
+    $('volume').value = volume;
+    $('volume').style.opacity = muted ? 0.45 : 1;
+    $('volLabel').textContent = muted ? 'off' : volume + '%';
+    try { localStorage.setItem('contra-volume', JSON.stringify({ volume, muted })); } catch (e) {}
   }
+  function setVolume(v) { volume = Math.max(0, Math.min(100, Math.round(v))); if (volume > 0) muted = false; applyVolume(); }
+  function toggleMute() { muted = !muted; applyVolume(); toast(muted ? 'Sonido silenciado' : 'Volumen ' + volume + '%'); }
+  try {
+    const s = JSON.parse(localStorage.getItem('contra-volume') || 'null');
+    if (s && typeof s.volume === 'number') { volume = Math.max(0, Math.min(100, s.volume)); muted = !!s.muted; }
+  } catch (e) {}
+  applyVolume();
+  $('volume').addEventListener('input', e => { initAudio(); setVolume(+e.target.value); });
+  $('volume').addEventListener('change', e => e.target.blur()); // devolver el teclado al juego
   function toggleFull() {
     if (document.fullscreenElement) document.exitFullscreen();
     else canvas.requestFullscreen && canvas.requestFullscreen();

@@ -49,7 +49,7 @@ Settings → Pages → Source: *Deploy from a branch* → `main` / `(root)`.
 | Saltar (A) | K / X | Numpad 2 |
 | Start / Select | Enter / Shift | Numpad Enter / Numpad + |
 
-`P` pausa · `M` sonido · `F` pantalla completa · `F5` guardar · `F9` cargar (se guarda en `localStorage`).
+`P` pausa · `M` silenciar · `-` / `+` volumen (también con el control deslizante, se recuerda entre visitas) · `F` pantalla completa · `F5` guardar · `F9` cargar (se guarda en `localStorage`).
 Mandos USB/Bluetooth funcionan vía Gamepad API (primer mando = J1, segundo = J2). En móvil aparecen controles táctiles.
 
 ## Estructura
