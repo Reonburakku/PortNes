@@ -42,7 +42,7 @@
   #stage { position: relative; flex: 1; min-width: 0; min-height: 0; container-type: size;
     display: flex; align-items: center; justify-content: center; }
   canvas { image-rendering: pixelated; image-rendering: crisp-edges; background: #000; display: block;
-    width: min(100cqw, 100cqh * 256 / 240); height: auto; aspect-ratio: 256 / 240;
+    width: min(100cqw, 100cqh * var(--ar, 1)); height: auto; aspect-ratio: var(--ar, 1);
     border: 1px solid var(--border); }
 
   /* Panel de controles */
@@ -113,7 +113,7 @@
 </head>
 <body>
 <header>
-  <h1>PortNes</h1>
+  <h1 id="appName">PortNes</h1>
   <button id="btnOnline" class="primary">Online</button>
   <span id="netStatus" hidden></span>
   <span class="spacer"></span>
@@ -130,61 +130,20 @@
   <select id="gameSelect" aria-label="Juego" title="Elegir juego">
     <option value="" disabled selected>Elegir juego…</option>
   </select>
-  <input id="fileInput" type="file" accept=".nes" hidden>
+  <input id="fileInput" type="file" hidden>
   <button id="btnForget" title="Borra la ROM guardada en este navegador">Olvidar ROM</button>
 </header>
 
 <main>
   <div id="stage">
-    <canvas id="screen" width="256" height="240"></canvas>
+    <canvas id="screen"></canvas>
     <div id="overlay"><div class="box" id="overlayText">Cargando…</div></div>
   </div>
 
-  <aside id="help" aria-label="Controles">
-    <h2>Jugador 1</h2>
-    <ul>
-      <li><span>Mover</span><span class="keys"><kbd>←↑→↓</kbd><kbd>WASD</kbd></span></li>
-      <li><span>Botón B</span><span class="keys"><kbd>J</kbd><kbd>Z</kbd></span></li>
-      <li><span>Botón A</span><span class="keys"><kbd>K</kbd><kbd>X</kbd></span></li>
-      <li><span>Start</span><span class="keys"><kbd>Enter</kbd></span></li>
-      <li><span>Select</span><span class="keys"><kbd>Shift</kbd></span></li>
-    </ul>
-    <h2>Jugador 2</h2>
-    <ul>
-      <li><span>Mover</span><span class="keys"><kbd>Num 8 4 5 6</kbd></span></li>
-      <li><span>Botón B</span><span class="keys"><kbd>Num 1</kbd></span></li>
-      <li><span>Botón A</span><span class="keys"><kbd>Num 2</kbd></span></li>
-      <li><span>Start</span><span class="keys"><kbd>Num Enter</kbd></span></li>
-      <li><span>Select</span><span class="keys"><kbd>Num +</kbd></span></li>
-    </ul>
-    <h2>Opciones</h2>
-    <ul>
-      <li><span>Pausa</span><span class="keys"><kbd>P</kbd></span></li>
-      <li><span>Guardar partida</span><span class="keys"><kbd>F5</kbd></span></li>
-      <li><span>Cargar partida</span><span class="keys"><kbd>F9</kbd></span></li>
-      <li><span>Silenciar</span><span class="keys"><kbd>M</kbd></span></li>
-      <li><span>Volumen</span><span class="keys"><kbd>-</kbd><kbd>+</kbd></span></li>
-      <li><span>Pantalla completa</span><span class="keys"><kbd>F</kbd></span></li>
-    </ul>
-    <p>Mandos USB/Bluetooth compatibles. En partida online, cada jugador usa los controles del Jugador 1.</p>
-  </aside>
+  <aside id="help" aria-label="Controles"><!-- generado desde CONFIG.help --></aside>
 </main>
 
-<div id="touch">
-  <div class="dpad">
-    <span></span><div class="tb" data-btn="UP">▲</div><span></span>
-    <div class="tb" data-btn="LEFT">◀</div><span></span><div class="tb" data-btn="RIGHT">▶</div>
-    <span></span><div class="tb" data-btn="DOWN">▼</div><span></span>
-  </div>
-  <div class="mid">
-    <div class="tb" data-btn="SELECT">SELECT</div>
-    <div class="tb" data-btn="START">START</div>
-  </div>
-  <div class="ab">
-    <div class="tb" data-btn="B">B</div>
-    <div class="tb" data-btn="A">A</div>
-  </div>
-</div>
+<div id="touch"><!-- generado desde CONFIG.touch --></div>
 
 
 <div id="netPanel" hidden>
@@ -221,24 +180,42 @@
 
 <div id="toast"></div>
 
+<!-- NÚCLEO del sistema: librería + adaptador (SPEC.md §4). Cambiar estas dos líneas para otro emulador. -->
 <script src="vendor/jsnes.min.js"></script>
+<script src="cores/nes.js"></script>
+<!-- Configuración del emulador (SPEC.md §3) -->
+<script src="config.js"></script>
 <script src="vendor/peerjs.min.js"></script>
 <script>
 (() => {
   'use strict';
-  const W = 256, H = 240;
-  const FRAME_MS = 1000 / 60.0988; // NTSC
-  const EMU_RATE = 44100;          // fija: la temporización de la APU depende de ella (necesario para el online)
-  const B = jsnes.Controller;
+  // =====================================================================
+  //  SHELL GENÉRICO DE EMULADOR WEB (SPEC.md). No contiene nada específico
+  //  de la consola: todo sale de window.CONFIG (config.js) y del núcleo
+  //  window.EmulatorCore (cores/<sistema>.js).
+  // =====================================================================
   const $ = id => document.getElementById(id);
+  const C = window.CONFIG, CORE = window.EmulatorCore;
+  if (!C || !CORE) { document.body.textContent = 'Falta config.js o el núcleo del emulador.'; return; }
+  const INFO = CORE.info, NET = C.netplay;
+  const W = INFO.width, H = INFO.height;
+  const FRAME_MS = 1000 / INFO.fps;
+  const EMU_RATE = INFO.sampleRate;
+  const PLAYERS = INFO.players;
+  const BTN = Object.fromEntries(INFO.buttons.map((n, i) => [n, i])); // nombre de botón → bit
+  const NBTN = INFO.buttons.length;
+  const EXT_TXT = INFO.extensions.join(', ');
+  const EXT_RE = new RegExp('(' + INFO.extensions.map(e => e.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|') + ')$', 'i');
 
   // ---------- Vídeo ----------
   const canvas = $('screen');
+  canvas.width = W; canvas.height = H;
+  document.documentElement.style.setProperty('--ar', W / H);
   const ctx = canvas.getContext('2d');
   const image = ctx.createImageData(W, H);
   const buf32 = new Uint32Array(image.data.buffer);
 
-  // ---------- Audio (emulación a 44.1 kHz, remuestreo a la frecuencia del dispositivo) ----------
+  // ---------- Audio (frecuencia fija del núcleo, remuestreo a la del dispositivo) ----------
   const AUDIO_BUF = 16384, AUDIO_MASK = AUDIO_BUF - 1;
   const audioL = new Float32Array(AUDIO_BUF), audioR = new Float32Array(AUDIO_BUF);
   let audioW = 0, audioRd = 0, audioFrac = 0, audioCtx = null, gain = null, muted = false;
@@ -265,9 +242,9 @@
     node.connect(gain); gain.connect(audioCtx.destination);
   }
 
-  const nes = new jsnes.NES({
-    sampleRate: EMU_RATE,
-    onFrame(fb) { for (let i = 0; i < W * H; i++) buf32[i] = 0xFF000000 | fb[i]; },
+  // ---------- Núcleo ----------
+  const core = CORE.create({
+    onFrame(px) { for (let i = 0; i < W * H; i++) buf32[i] = 0xFF000000 | px[i]; },
     onAudioSample(l, r) {
       const next = (audioW + 1) & AUDIO_MASK;
       if (next === audioRd) return; // buffer lleno: descartar
@@ -275,19 +252,15 @@
     },
   });
 
-  // ---------- Entrada: estado por jugador como máscara de 8 bits ----------
-  // "latched" garantiza que una pulsación rapidísima dure al menos 1 frame.
-  const held = [0, 0, 0], latched = [0, 0, 0];
+  // ---------- Entrada: estado por jugador como máscara de bits ----------
+  // "latched" garantiza que una pulsación rapidísima dure al menos 1 cuadro.
+  const held = new Array(PLAYERS + 1).fill(0), latched = new Array(PLAYERS + 1).fill(0);
   function press(p, b) { held[p] |= 1 << b; latched[p] |= 1 << b; }
   function release(p, b) { held[p] &= ~(1 << b); }
   function sample(p) { const v = held[p] | latched[p]; latched[p] = 0; return v; }
-  function applyInputs(p1, p2) {
-    for (let b = 0; b < 8; b++) {
-      (p1 >> b) & 1 ? nes.buttonDown(1, b) : nes.buttonUp(1, b);
-      (p2 >> b) & 1 ? nes.buttonDown(2, b) : nes.buttonUp(2, b);
-    }
-  }
-  function releaseAll() { held[1] = held[2] = 0; }
+  function sampleAll() { const m = []; for (let p = 1; p <= PLAYERS; p++) m.push(sample(p)); return m; }
+  function sampleMerged() { let v = 0; for (let p = 1; p <= PLAYERS; p++) v |= sample(p); return v; }
+  function releaseAll() { held.fill(0); }
 
   // ---------- Bucle principal ----------
   let running = false, paused = false, last = 0, acc = 0;
@@ -299,35 +272,28 @@
     let ran = false;
     if (net.active) ran = netStep(t);
     else {
-      while (acc >= FRAME_MS) { applyInputs(sample(1), sample(2)); nes.frame(); acc -= FRAME_MS; ran = true; }
+      while (acc >= FRAME_MS) { core.setInputs(sampleAll()); core.runFrame(); acc -= FRAME_MS; ran = true; }
     }
     if (ran) ctx.putImageData(image, 0, 0);
   }
-  requestAnimationFrame(loop);
 
   // ---------- Carga de ROM ----------
   const overlay = $('overlay'), overlayText = $('overlayText');
   function showOverlay(html) { overlayText.innerHTML = html; overlay.classList.remove('hidden'); }
   function hideOverlay() { overlay.classList.add('hidden'); }
+  const escapeHtml = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-  function bytesToBinaryString(bytes) {
-    let s = '';
-    for (let i = 0; i < bytes.length; i += 0x8000)
-      s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
-    return s;
-  }
   async function sha256(bytes) {
     const d = await crypto.subtle.digest('SHA-256', bytes);
     return Array.from(new Uint8Array(d), x => x.toString(16).padStart(2, '0')).join('');
   }
 
-  let romKey = 'contra', romHash = null;
+  let romKey = 'rom', romHash = null;
   function startRom(bytes, name) {
-    if (bytes[0] !== 0x4E || bytes[1] !== 0x45 || bytes[2] !== 0x53 || bytes[3] !== 0x1A) {
-      showOverlay('El archivo no es una ROM iNES válida.'); return false;
-    }
-    try { nes.loadROM(bytesToBinaryString(bytes)); }
-    catch (e) { showOverlay('No se pudo cargar la ROM: ' + e.message); return false; }
+    const invalid = CORE.validate(bytes);
+    if (invalid) { showOverlay(escapeHtml(invalid)); return false; }
+    try { core.load(bytes); }
+    catch (e) { showOverlay('No se pudo cargar la ROM: ' + escapeHtml(e.message)); return false; }
     currentGame = findGame(name) ? findGame(name).name : null;
     syncGameSelect();
     romKey = (name || 'rom').toLowerCase();
@@ -342,20 +308,20 @@
     return true;
   }
 
-  // ---------- Catálogo de juegos (games.json), siempre en orden alfabético ----------
+  // ---------- Catálogo de juegos, siempre en orden alfabético ----------
   let games = [], currentGame = null;
   const collator = new Intl.Collator('es', { sensitivity: 'base', numeric: true });
   const findGame = name => name ? games.find(g => collator.compare(g.name, name) === 0) : null;
 
   function loadCatalog() {
-    return fetch('games.json', { cache: 'no-cache' })
+    return fetch(C.catalogUrl, { cache: 'no-cache' })
       .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
       .then(list => {
         games = (Array.isArray(list) ? list : [])
           .filter(g => g && typeof g.name === 'string' && typeof g.url === 'string')
           .sort((a, b) => collator.compare(a.name, b.name));
       })
-      .catch(e => { console.warn('No se pudo leer games.json', e); games = []; })
+      .catch(e => { console.warn('No se pudo leer el catálogo', C.catalogUrl, e); games = []; })
       .then(buildGameSelect);
   }
   function buildGameSelect() {
@@ -365,7 +331,7 @@
     ph.disabled = true; sel.add(ph);
     for (const g of games) sel.add(new Option(g.name, g.name));
     const sep = new Option('──────────', ''); sep.disabled = true; sel.add(sep);
-    sel.add(new Option('Abrir archivo .nes…', '__file'));
+    sel.add(new Option('Abrir archivo ' + EXT_TXT + '…', '__file'));
     syncGameSelect();
   }
   function syncGameSelect() {
@@ -399,7 +365,6 @@
       return false;
     }
   }
-  const escapeHtml = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
   $('gameSelect').addEventListener('change', e => {
     const v = e.target.value;
@@ -411,7 +376,7 @@
   // ROM recordada en este navegador (IndexedDB; nunca sale del equipo)
   function idb() {
     return new Promise((res, rej) => {
-      const req = indexedDB.open('contra-web', 1);
+      const req = indexedDB.open(C.storage.db, 1);
       req.onupgradeneeded = () => req.result.createObjectStore('roms');
       req.onsuccess = () => res(req.result);
       req.onerror = () => rej(req.error);
@@ -428,47 +393,32 @@
   const getStoredRom = () => idbOp('readonly', s => s.get('last')).catch(() => null);
   const forgetRom = () => idbOp('readwrite', s => s.delete('last')).catch(() => {});
 
-  const NO_ROM_MSG = '<b>Elige un juego en la lista</b><br>o arrastra aquí un archivo .nes';
+  const NO_ROM_MSG = '<b>Elige un juego en la lista</b><br>o arrastra aquí un archivo ' + escapeHtml(EXT_TXT);
 
   const params = new URLSearchParams(location.search);
   let inviteCode = (params.get('sala') || '').toUpperCase().replace(/[^A-Z0-9]/g, '') || null;
   const inviteGame = params.get('juego');
 
-  // Arranque: juego de la invitación → rom/contra.nes local → último juego usado → pedir juego
-  loadCatalog().then(async () => {
-    if (inviteGame && findGame(inviteGame) && await loadGame(inviteGame)) return;
-    try {
-      const r = await fetch('rom/contra.nes');
-      if (r.ok && startRom(new Uint8Array(await r.arrayBuffer()), 'Contra')) return;
-    } catch (e) {}
-    const rec = await getStoredRom();
-    if (rec && rec.bytes && startRom(new Uint8Array(rec.bytes), rec.name)) return;
-    showOverlay(NO_ROM_MSG + (inviteCode ? '<br><br><b>Te han invitado a una partida online.</b> Elige el mismo juego para unirte.' : ''));
-  });
-
   function loadFile(file) {
     if (!file) return;
     if (net.peer) { toast('Sal de la partida online antes de cambiar de ROM'); return; }
     file.arrayBuffer().then(ab => {
-      const bytes = new Uint8Array(ab), name = file.name.replace(/\.nes$/i, '');
-      startRom(bytes, name);
-      if (running) storeRom(bytes, name);
+      const bytes = new Uint8Array(ab), name = file.name.replace(EXT_RE, '');
+      if (startRom(bytes, name)) storeRom(bytes, name);
     });
   }
+  $('fileInput').accept = INFO.extensions.join(',');
   $('fileInput').addEventListener('change', e => { loadFile(e.target.files[0]); e.target.value = ''; });
   window.addEventListener('dragover', e => e.preventDefault());
   window.addEventListener('drop', e => { e.preventDefault(); loadFile(e.dataTransfer.files[0]); });
   $('btnForget').onclick = () => forgetRom().then(() => toast('ROM olvidada en este navegador'));
 
-  // ---------- Teclado ----------
-  const KEYMAP = {
-    ArrowUp: [1, B.BUTTON_UP], ArrowDown: [1, B.BUTTON_DOWN], ArrowLeft: [1, B.BUTTON_LEFT], ArrowRight: [1, B.BUTTON_RIGHT],
-    KeyW: [1, B.BUTTON_UP], KeyS: [1, B.BUTTON_DOWN], KeyA: [1, B.BUTTON_LEFT], KeyD: [1, B.BUTTON_RIGHT],
-    KeyJ: [1, B.BUTTON_B], KeyZ: [1, B.BUTTON_B], KeyK: [1, B.BUTTON_A], KeyX: [1, B.BUTTON_A],
-    Enter: [1, B.BUTTON_START], ShiftLeft: [1, B.BUTTON_SELECT], ShiftRight: [1, B.BUTTON_SELECT],
-    Numpad8: [2, B.BUTTON_UP], Numpad5: [2, B.BUTTON_DOWN], Numpad4: [2, B.BUTTON_LEFT], Numpad6: [2, B.BUTTON_RIGHT],
-    Numpad1: [2, B.BUTTON_B], Numpad2: [2, B.BUTTON_A], NumpadEnter: [2, B.BUTTON_START], NumpadAdd: [2, B.BUTTON_SELECT],
-  };
+  // ---------- Teclado (CONFIG.keyboard) ----------
+  const KEYMAP = {};
+  for (const [p, map] of Object.entries(C.keyboard))
+    for (const [name, codes] of Object.entries(map))
+      if (name in BTN) for (const code of codes) KEYMAP[code] = [+p, BTN[name]];
+
   const typing = e => e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName);
   window.addEventListener('keydown', e => {
     if (typing(e)) return;
@@ -488,25 +438,20 @@
   window.addEventListener('keyup', e => { const m = KEYMAP[e.code]; if (m) { e.preventDefault(); release(m[0], m[1]); } });
   window.addEventListener('blur', releaseAll);
 
-  // ---------- Mandos (Gamepad API, mapeo estándar) ----------
-  const padState = [new Array(8).fill(false), new Array(8).fill(false)];
+  // ---------- Mandos (CONFIG.gamepad, mapeo estándar) ----------
+  const padState = Array.from({ length: PLAYERS }, () => new Array(NBTN).fill(false));
+  const AXES = [['UP', 1, -1], ['DOWN', 1, 1], ['LEFT', 0, -1], ['RIGHT', 0, 1]].filter(([n]) => n in BTN);
   function pollGamepads() {
     const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+    const T = C.gamepad.axisThreshold;
     let idx = 0;
     for (const gp of pads) {
-      if (!gp || idx > 1) continue;
+      if (!gp || idx >= PLAYERS) continue;
       const btn = i => !!(gp.buttons[i] && gp.buttons[i].pressed);
-      const ax = gp.axes[0] || 0, ay = gp.axes[1] || 0, T = 0.5;
-      const s = [];
-      s[B.BUTTON_A] = btn(0) || btn(3);           // A / Y  -> saltar
-      s[B.BUTTON_B] = btn(2) || btn(1);           // X / B  -> disparar
-      s[B.BUTTON_SELECT] = btn(8);
-      s[B.BUTTON_START] = btn(9);
-      s[B.BUTTON_UP] = btn(12) || ay < -T;
-      s[B.BUTTON_DOWN] = btn(13) || ay > T;
-      s[B.BUTTON_LEFT] = btn(14) || ax < -T;
-      s[B.BUTTON_RIGHT] = btn(15) || ax > T;
-      for (let b = 0; b < 8; b++) {
+      const s = new Array(NBTN).fill(false);
+      for (const [name, idxs] of Object.entries(C.gamepad.buttons)) if (name in BTN) s[BTN[name]] = idxs.some(btn);
+      for (const [name, axis, sign] of AXES) if ((gp.axes[axis] || 0) * sign > T) s[BTN[name]] = true;
+      for (let b = 0; b < NBTN; b++) {
         if (s[b] !== padState[idx][b]) {
           padState[idx][b] = s[b];
           s[b] ? press(idx + 1, b) : release(idx + 1, b);
@@ -516,40 +461,67 @@
     }
   }
 
-  // ---------- Controles táctiles ----------
-  document.querySelectorAll('#touch .tb').forEach(el => {
-    const b = B['BUTTON_' + el.dataset.btn];
-    const down = e => { e.preventDefault(); el.classList.add('on'); press(1, b); };
-    const up = e => { e.preventDefault(); el.classList.remove('on'); release(1, b); };
-    el.addEventListener('pointerdown', down);
-    el.addEventListener('pointerup', up);
-    el.addEventListener('pointercancel', up);
-    el.addEventListener('pointerleave', up);
-  });
+  // ---------- Interfaz generada desde la configuración ----------
+  function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+
+  function buildHelp() {
+    const box = $('help'); box.innerHTML = '';
+    for (const g of C.help || []) {
+      box.appendChild(el('h2', null, g.title));
+      const ul = el('ul');
+      for (const [label, keys] of g.items) {
+        const li = el('li'), k = el('span', 'keys');
+        for (const key of keys) k.appendChild(el('kbd', null, key));
+        li.append(el('span', null, label), k);
+        ul.appendChild(li);
+      }
+      box.appendChild(ul);
+    }
+    if (C.helpNote) box.appendChild(el('p', null, C.helpNote));
+  }
+
+  function buildTouch() {
+    const root = $('touch'); root.innerHTML = '';
+    const tb = (name, label) => { const d = el('div', 'tb', label || name); d.dataset.btn = name; return d; };
+    if (['UP', 'DOWN', 'LEFT', 'RIGHT'].every(n => n in BTN)) {
+      const pad = el('div', 'dpad');
+      for (const c of [null, ['UP', '▲'], null, ['LEFT', '◀'], null, ['RIGHT', '▶'], null, ['DOWN', '▼'], null])
+        pad.appendChild(c ? tb(c[0], c[1]) : el('span'));
+      root.appendChild(pad);
+    }
+    const mid = el('div', 'mid');
+    for (const n of (C.touch && C.touch.center) || []) if (n in BTN) mid.appendChild(tb(n));
+    const face = el('div', 'ab');
+    for (const n of (C.touch && C.touch.face) || []) if (n in BTN) face.appendChild(tb(n));
+    root.append(mid, face);
+    root.querySelectorAll('.tb').forEach(b => {
+      const bit = BTN[b.dataset.btn];
+      const down = e => { e.preventDefault(); b.classList.add('on'); press(1, bit); };
+      const up = e => { e.preventDefault(); b.classList.remove('on'); release(1, bit); };
+      b.addEventListener('pointerdown', down);
+      b.addEventListener('pointerup', up);
+      b.addEventListener('pointercancel', up);
+      b.addEventListener('pointerleave', up);
+    });
+  }
 
   // =====================================================================
-  //  ONLINE: lockstep determinista sobre WebRTC (PeerJS)
+  //  ONLINE: lockstep determinista sobre WebRTC (PeerJS) — SPEC.md §9
   //  Ambos navegadores emulan lo mismo; solo se envían los botones de cada
-  //  frame (con unos frames de retardo para absorber la latencia). Cada uno
-  //  usa su propia ROM: se comprueba que sean idénticas (SHA-256).
+  //  cuadro (con unos cuadros de retardo para absorber la latencia). Cada
+  //  uno usa su propia ROM: se comprueba que sean idénticas (SHA-256).
   // =====================================================================
-  const ROOM_PREFIX = 'contra-web-reonburakku-';
-  const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  // STUN públicos (los TURN que PeerJS trae por defecto ya no existen: sus DNS no resuelven)
-  const PEER_OPTS = { config: { iceServers: [
-    { urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"] },
-    { urls: "stun:stun.cloudflare.com:3478" },
-  ] } };
-  const CHUNK = 15000;            // PeerJS (JSON) rechaza mensajes de más de ~16 KB
+  const PEER_OPTS = { config: { iceServers: NET.iceServers } };
   const net = {
     peer: null, conn: null, role: null, code: null, active: false, syncing: false,
     me: 1, epoch: 0, frame: 0, delay: 3, nextLocal: 0,
     local: new Map(), remote: new Map(), myHash: new Map(), theirHash: new Map(),
-    rx: null, rtt: 0, rttSamples: [], pingTimer: null, lastAdvance: 0, needResync: false,
+    rx: null, tx: null, rtt: 0, rttSamples: [], pingTimer: null, lastAdvance: 0, needResync: false,
   };
-  window.__contra = { nes, net }; // depuración
+  window.__emu = { core, net, CONFIG: C }; // depuración
 
   function send(msg) { if (net.conn && net.conn.open) net.conn.send(msg); }
+  const inputsFor = (local, remote) => net.me === 1 ? [local, remote] : [remote, local];
 
   function resetLockstep(frame) {
     net.frame = frame;
@@ -561,8 +533,8 @@
   }
 
   function ramHash() {
-    const m = nes.cpu.mem; let h = 0x811c9dc5;
-    for (let i = 0; i < 0x800; i++) { h ^= m[i]; h = Math.imul(h, 0x01000193); }
+    const m = core.workRam(); let h = 0x811c9dc5;
+    for (let i = 0; i < m.length; i++) { h ^= m[i]; h = Math.imul(h, 0x01000193); }
     return h >>> 0;
   }
   function checkHash(f) {
@@ -579,20 +551,19 @@
     let ran = false;
     while (acc >= FRAME_MS) {
       const f = net.frame;
-      if (net.nextLocal <= f + net.delay) {           // generar mi entrada para dentro de "delay" frames
-        const v = sample(1) | sample(2);
+      if (net.nextLocal <= f + net.delay) {           // generar mi entrada para dentro de "delay" cuadros
+        const v = sampleMerged();
         net.local.set(net.nextLocal, v);
         send({ t: 'i', e: net.epoch, f: net.nextLocal, v });
         net.nextLocal++;
       }
       const r = net.remote.get(f);
       if (r === undefined) break;                      // falta la entrada del otro: esperar
-      const l = net.local.get(f);
-      net.me === 1 ? applyInputs(l, r) : applyInputs(r, l);
-      nes.frame();
+      core.setInputs(inputsFor(net.local.get(f), r));
+      core.runFrame();
       net.local.delete(f); net.remote.delete(f);
       net.frame++; acc -= FRAME_MS; ran = true; net.lastAdvance = now;
-      if (f % 120 === 0) { const h = ramHash(); net.myHash.set(f, h); send({ t: 'h', e: net.epoch, f, h }); checkHash(f); }
+      if (f % NET.hashEvery === 0) { const h = ramHash(); net.myHash.set(f, h); send({ t: 'h', e: net.epoch, f, h }); checkHash(f); }
     }
     updateStall(now);
     return ran;
@@ -600,21 +571,20 @@
 
   let stalledShown = false;
   function updateStall(now) {
-    const stalled = now - net.lastAdvance > 600;
+    const stalled = now - net.lastAdvance > NET.stallMs;
     if (stalled !== stalledShown) { stalledShown = stalled; updateNetUI(); }
   }
 
   // --- Sincronización completa del estado (inicio de partida o tras una desincronización) ---
-  function hostSync(reload) {
-    if (reload) nes.reloadROM();
+  function hostSync(reset) {
+    if (reset) core.reset();
     net.syncing = true; net.epoch++;
     const F = net.frame;
-    const s = nes.toJSON(); s.romData = null;          // la ROM no se envía: el otro usa la suya
-    const json = JSON.stringify(s);
-    const n = Math.ceil(json.length / CHUNK);
+    const json = JSON.stringify(core.saveState());     // sin la ROM: el otro usa la suya
+    const n = Math.ceil(json.length / NET.chunkSize);
     // Envío con control de flujo: el invitado confirma cada fragmento (enviarlo todo de golpe pierde datos)
     const chunks = [];
-    for (let i = 0; i < n; i++) chunks.push(json.slice(i * CHUNK, (i + 1) * CHUNK));
+    for (let i = 0; i < n; i++) chunks.push(json.slice(i * NET.chunkSize, (i + 1) * NET.chunkSize));
     net.tx = { e: net.epoch, chunks, next: 0, acked: 0 };
     send({ t: 's0', e: net.epoch, f: F, d: net.delay, n });
     pumpChunks();
@@ -624,14 +594,14 @@
   }
   function pumpChunks() {
     const tx = net.tx; if (!tx) return;
-    while (tx.next < tx.chunks.length && tx.next - tx.acked < 16) {
+    while (tx.next < tx.chunks.length && tx.next - tx.acked < NET.chunkWindow) {
       send({ t: 'sc', e: tx.e, i: tx.next, d: tx.chunks[tx.next] }); tx.next++;
     }
     if (tx.acked === tx.chunks.length) { send({ t: 's1', e: tx.e }); net.tx = null; }
   }
   function applyState(json) {
-    const s = JSON.parse(json); s.romData = nes.romData; nes.fromJSON(s);
-    applyInputs(0, 0);
+    core.loadState(JSON.parse(json));
+    core.setInputs(new Array(PLAYERS).fill(0));
   }
 
   function onData(m) {
@@ -671,7 +641,7 @@
       if (net.rttSamples.length < 3) { send({ t: 'ping', ts: performance.now() }); return; }
       const avg = net.rttSamples.reduce((a, b) => a + b, 0) / net.rttSamples.length;
       net.rttSamples = null;
-      net.delay = Math.max(2, Math.min(10, Math.ceil(avg / 2 / FRAME_MS) + 1));
+      net.delay = Math.max(NET.minDelay, Math.min(NET.maxDelay, Math.ceil(avg / 2 / FRAME_MS) + 1));
       net.active = true; paused = false; hideOverlay();
       net.frame = 0;
       hostSync(true);                                  // empezar desde el encendido de la consola
@@ -736,16 +706,20 @@
     } catch (e) { return 'estado ' + pc.iceConnectionState; }
   }
 
-  function newCode() { let c = ''; for (let i = 0; i < 5; i++) c += CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)]; return c; }
+  function newCode() {
+    let c = '';
+    for (let i = 0; i < NET.codeLength; i++) c += NET.codeChars[Math.floor(Math.random() * NET.codeChars.length)];
+    return c;
+  }
 
   function hostRoom() {
     if (!running) { netError('Carga primero la ROM.'); return; }
     if (typeof Peer === 'undefined') { netError('No se pudo cargar la librería de red.'); return; }
     netError('');
     const code = newCode();
-    const peer = new Peer(ROOM_PREFIX + code, PEER_OPTS);
+    const peer = new Peer(NET.roomPrefix + code, PEER_OPTS);
     net.peer = peer; net.role = 'host'; net.me = 1; net.code = code;
-    $('roomCode').textContent = '·····';
+    $('roomCode').textContent = '·'.repeat(NET.codeLength);
     $('waitMsg').textContent = 'Creando sala…';
     updateNetUI();
     peer.on('open', () => {
@@ -768,7 +742,7 @@
         try { conn.close(); } catch (e) {}
         net.conn = null;
       };
-      setTimeout(giveUp, 22000);
+      setTimeout(giveUp, NET.hostTimeoutMs);
       watchIce(conn, state => { if (state === 'failed') giveUp(); });
       conn.on('open', () => { $('waitMsg').textContent = 'Conectado. Comprobando ROM del Jugador 2…'; startPing(); });
     });
@@ -782,7 +756,7 @@
 
   function joinRoom(code) {
     code = (code || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
-    if (code.length !== 5) { netError('El código debe tener 5 caracteres.'); return; }
+    if (code.length !== NET.codeLength) { netError('El código debe tener ' + NET.codeLength + ' caracteres.'); return; }
     if (!running) { netError('Carga primero la ROM.'); return; }
     if (typeof Peer === 'undefined') { netError('No se pudo cargar la librería de red.'); return; }
     netError('');
@@ -801,10 +775,10 @@
       if (net.peer !== peer || (net.conn && net.conn.open)) return;
       if (!peer.open) { netError('No se pudo contactar con el servidor de salas (0.peerjs.com). Revisa la conexión, bloqueadores o extensiones.'); endNet(); }
       else fail(net.conn, 'tiempo agotado');
-    }, 20000);
+    }, NET.joinTimeoutMs);
     peer.on('open', () => {
       $('liveMsg').textContent = 'Buscando la sala ' + code + '…';
-      const conn = peer.connect(ROOM_PREFIX + code, { reliable: true, serialization: 'json' });
+      const conn = peer.connect(NET.roomPrefix + code, { reliable: true, serialization: 'json' });
       bindConn(conn);
       watchIce(conn, state => {
         if (state === 'checking' && !conn.open) $('liveMsg').textContent = 'Sala ' + code + ' encontrada. Estableciendo conexión directa…';
@@ -856,7 +830,7 @@
     $('netWaiting').hidden = !(net.role === 'host' && !net.active);
     $('netLive').hidden = !(net.active || net.role === 'guest');
     if (net.active) $('liveMsg').innerHTML = 'Partida en curso como <b>Jugador ' + net.me + '</b>. Retardo de entrada: ' +
-      net.delay + ' frames, ping ' + Math.round(net.rtt) + ' ms.' +
+      net.delay + ' cuadros, ping ' + Math.round(net.rtt) + ' ms.' +
       (net.me === 1 ? '<br><span class="muted">Elige el modo de 2 jugadores en el menú del juego.</span>' :
                       '<br><span class="muted">El Jugador 1 elige el modo en el menú del juego.</span>');
     $('btnLeave').hidden = !net.role;
@@ -869,6 +843,7 @@
   $('netPanel').addEventListener('pointerdown', e => { if (e.target.id === 'netPanel') $('netPanel').hidden = true; });
   $('btnHost').onclick = () => { initAudio(); hostRoom(); };
   $('btnJoin').onclick = () => { initAudio(); joinRoom($('joinCode').value); };
+  $('joinCode').maxLength = NET.codeLength;
   $('joinCode').addEventListener('keydown', e => { if (e.key === 'Enter') $('btnJoin').click(); });
   $('btnLeave').onclick = () => { endNet(); netError(''); toast('Has salido de la partida online'); };
   $('btnCopy').onclick = () => {
@@ -891,7 +866,8 @@
     if (audioCtx) paused ? audioCtx.suspend() : audioCtx.resume();
     toast(paused ? 'Pausa' : 'Continuar');
   }
-  // ---------- Volumen (0–100, curva cuadrática para que el control sea más natural al oído) ----------
+
+  // Volumen (0–100, curva cuadrática para que el control sea más natural al oído)
   let volume = 80;
   function outputGain() { return muted ? 0 : Math.pow(volume / 100, 2); }
   function applyVolume() {
@@ -902,42 +878,64 @@
     $('volume').value = volume;
     $('volume').style.opacity = muted ? 0.45 : 1;
     $('volLabel').textContent = muted ? 'off' : volume + '%';
-    try { localStorage.setItem('contra-volume', JSON.stringify({ volume, muted })); } catch (e) {}
+    try { localStorage.setItem(C.storage.volume, JSON.stringify({ volume, muted })); } catch (e) {}
   }
   function setVolume(v) { volume = Math.max(0, Math.min(100, Math.round(v))); if (volume > 0) muted = false; applyVolume(); }
   function toggleMute() { muted = !muted; applyVolume(); toast(muted ? 'Sonido silenciado' : 'Volumen ' + volume + '%'); }
   try {
-    const s = JSON.parse(localStorage.getItem('contra-volume') || 'null');
+    const s = JSON.parse(localStorage.getItem(C.storage.volume) || 'null');
     if (s && typeof s.volume === 'number') { volume = Math.max(0, Math.min(100, s.volume)); muted = !!s.muted; }
   } catch (e) {}
-  applyVolume();
   $('volume').addEventListener('input', e => { initAudio(); setVolume(+e.target.value); });
   $('volume').addEventListener('change', e => e.target.blur()); // devolver el teclado al juego
+
   function toggleFull() {
     if (document.fullscreenElement) document.exitFullscreen();
     else canvas.requestFullscreen && canvas.requestFullscreen();
   }
   function saveState() {
     if (!offlineOnly()) return;
-    try { localStorage.setItem('nes-state-' + romKey, JSON.stringify(nes.toJSON())); toast('Partida guardada'); }
+    try { localStorage.setItem(C.storage.statePrefix + romKey, JSON.stringify(core.saveState())); toast('Partida guardada'); }
     catch (e) { toast('No se pudo guardar: ' + e.message); }
   }
   function loadState() {
     if (!offlineOnly()) return;
     try {
-      const s = localStorage.getItem('nes-state-' + romKey);
+      const s = localStorage.getItem(C.storage.statePrefix + romKey);
       if (!s) { toast('No hay partida guardada'); return; }
-      nes.fromJSON(JSON.parse(s)); toast('Partida cargada');
+      core.loadState(JSON.parse(s)); toast('Partida cargada');
     } catch (e) { toast('No se pudo cargar: ' + e.message); }
   }
 
   $('btnPause').onclick = togglePause;
-  $('btnReset').onclick = () => { if (offlineOnly()) { nes.reloadROM(); toast('Reset'); } };
+  $('btnReset').onclick = () => { if (offlineOnly()) { core.reset(); toast('Reset'); } };
   $('btnSave').onclick = saveState;
   $('btnLoad').onclick = loadState;
   $('btnMute').onclick = () => { initAudio(); toggleMute(); };
   $('btnFull').onclick = toggleFull;
   document.addEventListener('visibilitychange', () => { if (document.hidden) releaseAll(); });
+
+  // ---------- Arranque ----------
+  document.title = C.appName;
+  $('appName').textContent = C.appName;
+  buildHelp();
+  buildTouch();
+  applyVolume();
+  requestAnimationFrame(loop);
+
+  // Orden: juego de la invitación → ROM local (desarrollo) → último juego usado → pedir juego
+  loadCatalog().then(async () => {
+    if (inviteGame && findGame(inviteGame) && await loadGame(inviteGame)) return;
+    if (C.localRom) {
+      try {
+        const r = await fetch(C.localRom.url);
+        if (r.ok && startRom(new Uint8Array(await r.arrayBuffer()), C.localRom.name)) return;
+      } catch (e) {}
+    }
+    const rec = await getStoredRom();
+    if (rec && rec.bytes && startRom(new Uint8Array(rec.bytes), rec.name)) return;
+    showOverlay(NO_ROM_MSG + (inviteCode ? '<br><br><b>Te han invitado a una partida online.</b> Elige el mismo juego para unirte.' : ''));
+  });
 })();
 </script>
 </body>

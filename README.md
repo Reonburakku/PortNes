@@ -73,8 +73,11 @@ Mandos USB/Bluetooth funcionan vía Gamepad API (primer mando = J1, segundo = J2
 
 ## Estructura
 
-- `index.html`: interfaz, vídeo, audio (WebAudio), entrada, guardado de estado y netplay
-- `vendor/jsnes.min.js`: núcleo del emulador (CPU 6502, PPU, APU, mapper 2/UxROM)
+- `index.html`: shell genérico (interfaz, vídeo, audio, entrada, catálogo, guardado y netplay)
+- `config.js`: configuración del emulador (nombre, controles, ayuda, almacenamiento, online)
+- `cores/nes.js`: adaptador del núcleo NES (contrato en SPEC.md §4)
+- `vendor/jsnes.min.js`: librería del emulador NES (CPU 6502, PPU, APU, mappers)
+- `tools/determinism-test.js`: prueba de determinismo (`npm test -- rom/contra.nes`)
 - `vendor/peerjs.min.js`: conexión WebRTC para el modo online
 - `rom/contra.nes`: tu ROM, solo en local (ignorada por git)
 - `games.json`: catálogo de juegos (nombre + URL de la ROM)

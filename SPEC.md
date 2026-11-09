@@ -24,8 +24,10 @@ Las palabras **DEBE**, **DEBERÍA** y **PUEDE** indican requisito obligatorio, r
 
 ## 2. Arquitectura
 
-Página única (`index.html`) sin build ni framework. Todo el JavaScript está en un `<script>` en línea dentro de una
-IIFE; las librerías se sirven desde `vendor/` (copiadas de npm, sin CDN en tiempo de ejecución).
+Página única sin build ni framework. `index.html` contiene el **shell genérico** (HTML, CSS y un `<script>` en línea
+dentro de una IIFE) y no menciona la consola: todo lo específico vive en `config.js` (`window.CONFIG`) y en
+`cores/<sistema>.js` (`window.EmulatorCore`). Las librerías se sirven desde `vendor/` (copiadas de npm, sin CDN en
+tiempo de ejecución). Orden de carga: librería del núcleo → adaptador → `config.js` → PeerJS → shell.
 
 ```
 ┌────────────────────────── index.html ──────────────────────────┐
@@ -51,9 +53,12 @@ IIFE; las librerías se sirven desde `vendor/` (copiadas de npm, sin CDN en tiem
 
 | Archivo | Rol | ¿Cambia por sistema? |
 |---|---|---|
-| `index.html` | Shell completo (HTML, CSS y JS) | Solo la configuración (§3) y el adaptador del núcleo (§4) |
+| `index.html` | Shell genérico (HTML, CSS y JS); el panel de ayuda y los táctiles se generan desde `CONFIG` | Solo las 2 etiquetas `<script>` del núcleo (y `--accent` si se quiere otro color) |
+| `config.js` | `window.CONFIG`: nombre, catálogo, almacenamiento, teclado, mando, táctil, ayuda, online (§3) | Sí |
+| `cores/<sistema>.js` | Adaptador del núcleo: `window.EmulatorCore` (§4) | Sí (uno por sistema) |
 | `games.json` | Catálogo de juegos | Sí (contenido) |
-| `vendor/<core>.js` + licencia | Núcleo del emulador | Sí |
+| `vendor/<core>.js` + licencia | Librería del emulador | Sí |
+| `tools/determinism-test.js` | Prueba de determinismo del núcleo en Node (§11) | Solo las 2 líneas de carga del núcleo |
 | `vendor/peerjs.min.js` + licencia | WebRTC | No |
 | `server.js` | Servidor estático local sin dependencias (respeta `PORT`) | No |
 | `start.bat` | Arranque local en Windows | No |
@@ -66,32 +71,52 @@ IIFE; las librerías se sirven desde `vendor/` (copiadas de npm, sin CDN en tiem
 
 ## 3. Configuración por emulador
 
-Al crear un emulador nuevo a partir de la plantilla, se DEBEN revisar estos valores (hoy repartidos en `index.html`;
-DEBERÍAN agruparse en un único objeto `CONFIG` al inicio del script):
+Lo específico de cada emulador está en dos sitios. El shell lo lee todo de ahí; no hay valores de la consola
+dentro de `index.html`.
+
+**`config.js` → `window.CONFIG`** (decisiones del autor del emulador):
 
 | Clave | Valor en PortNes | Notas |
 |---|---|---|
-| Nombre (título, `<h1>`) | `PortNes` | |
-| Extensiones de ROM | `.nes` | `accept` del `<input type=file>` y validación de cabecera |
-| Resolución nativa | 256 × 240 | Tamaño del `<canvas>` y `aspect-ratio` del CSS |
-| Frecuencia de cuadro | `60.0988` Hz (NTSC) | `FRAME_MS = 1000 / fps` |
-| Frecuencia de audio del núcleo | `44100` Hz fija | Ver §6: no depender del dispositivo |
-| Jugadores | 2 | |
-| Botones | 8: A, B, Select, Start, Arriba, Abajo, Izquierda, Derecha | Máscara de bits (§7) |
-| Mapa de teclado | §7.2 | |
-| Prefijo de sala online | `contra-web-reonburakku-` | DEBE ser único por emulador y autor |
-| Claves de almacenamiento | `contra-web` (IndexedDB), `nes-state-<rom>`, `contra-volume` | Nombres heredados; en un emulador nuevo usar `<app>-…` |
-| Ruta de ROM local por defecto | `rom/contra.nes` | Solo desarrollo |
-| Rango de RAM para detectar desincronización | `cpu.mem[0x000–0x7FF]` | La RAM de trabajo del sistema |
+| `appName` | `PortNes` | Título de la pestaña y `<h1>` |
+| `catalogUrl` | `games.json` | §8.1 |
+| `localRom` | `{ url: 'rom/contra.nes', name: 'Contra' }` | Solo desarrollo; `null` para desactivar |
+| `storage` | `{ db: 'contra-web', statePrefix: 'nes-state-', volume: 'contra-volume' }` | Nombres heredados; en un emulador nuevo usar un prefijo propio (`portgb-…`) |
+| `keyboard` | jugador → botón → códigos de tecla (§7.2) | Los nombres de botón deben existir en `EmulatorCore.info.buttons` |
+| `gamepad` | `{ buttons: { A: [0, 3], … }, axisThreshold: 0.5 }` | El stick activa UP/DOWN/LEFT/RIGHT si existen |
+| `touch` | `{ center: ['SELECT', 'START'], face: ['B', 'A'] }` | La cruceta aparece si existen las 4 direcciones |
+| `help`, `helpNote` | Grupos `[texto, [teclas]]` | Genera el panel de controles (§5.3) |
+| `netplay` | `roomPrefix`, `codeLength`, `codeChars`, `iceServers`, `minDelay`, `maxDelay`, `hashEvery`, `chunkSize`, `chunkWindow`, `joinTimeoutMs`, `hostTimeoutMs`, `stallMs` | §9. `roomPrefix` DEBE ser único por emulador y autor |
+
+**`cores/<sistema>.js` → `EmulatorCore.info`** (hechos de la consola):
+
+| Clave | NES | Uso en el shell |
+|---|---|---|
+| `system` | `'NES'` | Informativo |
+| `width`, `height` | 256, 240 | Tamaño del canvas y `--ar` (proporción) en CSS |
+| `fps` | 60.0988 (NTSC) | `FRAME_MS = 1000 / fps` |
+| `sampleRate` | 44100 (fija) | Frecuencia del `AudioContext` y del remuestreo (§6.3) |
+| `players` | 2 | Tamaño de las máscaras de entrada |
+| `buttons` | `['A','B','SELECT','START','UP','DOWN','LEFT','RIGHT']` | Índice = bit de la máscara (§7) |
+| `extensions` | `['.nes']` | `accept` del selector de archivo, textos y nombre sin extensión |
 
 ---
 
 ## 4. Contrato del núcleo (adaptador)
 
-El shell solo habla con el núcleo a través de estas operaciones. Para portar otro sistema hay que escribir un
-adaptador que las implemente sobre la librería elegida.
+El shell solo habla con el núcleo a través de este contrato. Para portar otro sistema hay que escribir
+`cores/<sistema>.js`, que define `window.EmulatorCore` (o `globalThis.EmulatorCore` en Node) sobre la librería elegida.
 
 ```ts
+// Objeto global que expone el adaptador
+interface EmulatorCoreModule {
+  info: { system: string; width: number; height: number; fps: number; sampleRate: number;
+          players: number; buttons: string[]; extensions: string[] };      // ver §3
+  validate(bytes: Uint8Array): string | null;   // null si parece válida; si no, mensaje para el usuario
+  create(callbacks: { onFrame, onAudioSample }): EmulatorCore;
+}
+
+// Instancia creada por create()
 interface EmulatorCore {
   // Carga una ROM. Lanza un Error con mensaje legible si no es válida o no está soportada.
   load(bytes: Uint8Array): void;
@@ -104,8 +129,8 @@ interface EmulatorCore {
   // Estado completo serializable a JSON, SIN la ROM. Restaurarlo debe dar una emulación idéntica.
   saveState(): object;
   loadState(state: object): void;
-  // Memoria que se usa para comparar ambos lados en online (barata de leer).
-  workRam(): Uint8Array;
+  // Memoria que se usa para comparar ambos lados en online (barata de leer). Array o array tipado.
+  workRam(): ArrayLike<number>;
 }
 // Callbacks que el shell pasa al crear el núcleo:
 //   onFrame(pixels: Uint32Array /* ancho×alto, 0x00BBGGRR */)
@@ -121,19 +146,21 @@ interface EmulatorCore {
   (en jsnes la APU no se serializa), ambos lados DEBEN aplicar el mismo estado para quedar idénticos (§9.4).
 - **DEBERÍA** funcionar en el hilo principal a velocidad completa en un PC modesto.
 
-### 4.2 Implementación actual (jsnes 1.2.1)
+### 4.2 Implementación actual: `cores/nes.js` (jsnes 1.2.1)
 
 | Contrato | jsnes |
 |---|---|
+| `validate` | Los 4 primeros bytes DEBEN ser `4E 45 53 1A` (cabecera iNES) |
 | `load` | `nes.loadROM(binaryString)` (convertir `Uint8Array` a cadena binaria por bloques de 32 KB) |
 | `reset` | `nes.reloadROM()` |
-| `setInputs` | `nes.buttonDown/buttonUp(jugador, botón)` por cada bit (`applyInputs`) |
+| `setInputs` | `nes.buttonDown/buttonUp(jugador, botón)` por cada bit |
 | `runFrame` | `nes.frame()` |
 | `saveState` | `nes.toJSON()` con `romData = null` |
-| `loadState` | `s.romData = nes.romData; nes.fromJSON(s)` |
-| `workRam` | `nes.cpu.mem.subarray(0, 0x800)` |
+| `loadState` | `nes.fromJSON({ ...estado, romData: nes.romData })` |
+| `workRam` | `nes.cpu.mem.slice(0, 0x800)` (tras `fromJSON`, `cpu.mem` es un `Array`, no un array tipado) |
 
-Validación de cabecera: los 4 primeros bytes DEBEN ser `4E 45 53 1A` (iNES). Otros sistemas: validar su formato.
+El adaptador también expone `raw` (la instancia de jsnes) para depuración; el shell no lo usa. En la página,
+`window.__emu = { core, net, CONFIG }` permite inspeccionar el estado desde la consola.
 
 ---
 
@@ -162,7 +189,7 @@ Validación de cabecera: los 4 primeros bytes DEBEN ser `4E 45 53 1A` (iNES). Ot
 
 ### 5.3 Panel de controles
 
-Lista con un elemento por control, agrupada en **Jugador 1**, **Jugador 2** y **Opciones**, más una nota sobre mandos
+Se genera desde `CONFIG.help`: lista con un elemento por control, agrupada en **Jugador 1**, **Jugador 2** y **Opciones**, más una nota sobre mandos
 y online. Los nombres de botón DEBEN ser los del sistema (A/B en NES), no los de un juego concreto.
 
 ### 5.4 Estilo
@@ -208,7 +235,7 @@ de resolución nativa y se escala con CSS.
   Abajo=5, Izquierda=6, Derecha=7).
 - `press(p, b)` / `release(p, b)` actualizan `held[p]` y marcan `latched[p]`.
 - `sample(p)` devuelve `held | latched` y limpia `latched`: **una pulsación más corta que un cuadro no se pierde**.
-- Las entradas se aplican al núcleo **solo en la frontera entre cuadros** (`applyInputs` antes de `runFrame`).
+- Las entradas se aplican al núcleo **solo en la frontera entre cuadros** (`core.setInputs` justo antes de `core.runFrame`).
 - Al perder el foco o cambiar de pestaña se sueltan todos los botones.
 - Las teclas se ignoran mientras el foco está en `INPUT`, `TEXTAREA` o `SELECT`, y esos controles se desenfocan
   tras usarlos para devolver el teclado al juego.
@@ -346,8 +373,10 @@ sincronización en curso.
 
 Al portar o modificar, comprobar como mínimo:
 
-- [ ] **Determinismo del núcleo** (Node, sin navegador): dos instancias que cargan el mismo estado y reciben
-      5000 cuadros de entradas aleatorias de 2 jugadores terminan con la misma RAM y el mismo estado de vídeo.
+- [ ] **Determinismo del núcleo**: `node tools/determinism-test.js <rom> [cuadros]` (o `npm test -- <rom>`).
+      Dos instancias con historias distintas cargan el mismo estado y reciben 5000 cuadros de entradas aleatorias
+      de todos los jugadores; deben terminar con la misma RAM en cada cuadro y el mismo estado final.
+      Probado con Contra (5000 cuadros) y Tennis (3000).
 - [ ] La lista de juegos aparece en orden alfabético aunque `games.json` esté desordenado y con tildes.
 - [ ] Un juego del catálogo se descarga y arranca; un fallo de CORS muestra el aviso y se puede cerrar.
 - [ ] Una pulsación más corta que un cuadro llega al juego (por ejemplo, Start en el título).
@@ -362,6 +391,8 @@ Al portar o modificar, comprobar como mínimo:
 
 > Para probar el online en una sola pestaña: una página temporal con dos `<iframe>` de `index.html` lado a lado.
 > Los iframes visibles reciben `requestAnimationFrame`; dos pestañas no, porque la que está oculta se pausa.
+> Si la ventana entera está oculta (por ejemplo, en un navegador automatizado), cargar los iframes con `srcdoc`
+> inyectando `<base href="/">` y un `requestAnimationFrame` basado en `setTimeout`, solo en la página de prueba.
 
 ---
 
@@ -383,11 +414,14 @@ Al portar o modificar, comprobar como mínimo:
 ## 13. Cómo crear un emulador nuevo con esta plantilla
 
 1. Copiar el repositorio y vaciar `games.json`.
-2. Elegir un núcleo JavaScript (o WASM) que cumpla §4.1 y copiarlo a `vendor/` con su licencia.
-3. Escribir el adaptador §4 y sustituir las llamadas a `nes.*` por él.
-4. Ajustar la configuración (§3): nombre, extensiones, resolución, fps, botones, mapa de teclas, prefijo de sala
-   y claves de almacenamiento propias.
-5. Actualizar el panel de controles (§5.3) y la validación de cabecera de la ROM.
-6. Pasar la prueba de determinismo (§11) **antes** de probar el online.
+2. Elegir un núcleo JavaScript (o WASM) que cumpla §4.1 y copiarlo a `vendor/` con su licencia
+   (y a `package.json` si viene de npm).
+3. Crear `cores/<sistema>.js` con `EmulatorCore` (`info`, `validate`, `create`) según §4, tomando `cores/nes.js`
+   como modelo.
+4. En `index.html`, cambiar solo las 2 etiquetas `<script>` del núcleo (librería y adaptador).
+5. Editar `config.js` (§3): `appName`, `localRom`, `storage` con prefijo propio, `keyboard`, `gamepad`, `touch`,
+   `help` con los botones del sistema y `netplay.roomPrefix` único.
+6. En `tools/determinism-test.js`, cambiar las 2 líneas de carga del núcleo y pasar la prueba **antes** de probar
+   el online.
 7. Subir las ROMs a un almacenamiento con CORS, rellenar `games.json` y publicar en GitHub Pages.
 8. Recorrer la lista de verificación §11.

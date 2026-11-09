@@ -1,10 +1,10 @@
 {
   "name": "portnes",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "Emulador web de NES con modo online (plantilla para otros emuladores: ver SPEC.md)",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node server.js 8080",
+    "test": "node tools/determinism-test.js"
   },
   "keywords": [],
   "author": "",
