@@ -192,7 +192,7 @@
     }
     try { nes.loadROM(bytesToBinaryString(bytes)); }
     catch (e) { showOverlay('No se pudo cargar la ROM: ' + e.message); return; }
-    romKey = name || 'rom';
+    romKey = (name || 'rom').toLowerCase();
     running = true; paused = false; acc = 0;
     showOverlay('<b>Pulsa cualquier tecla o toca la pantalla para empezar</b><br><small>(los navegadores exigen una interacción para activar el sonido)</small>');
     const go = () => { initAudio(); hideOverlay();
