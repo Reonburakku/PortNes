@@ -4,6 +4,9 @@ Emulador de NES para el navegador, basado en [jsnes](https://github.com/bfirsh/j
 
 **Jugar:** https://reonburakku.github.io/PortNes/
 
+¿Quieres crear otro emulador web a partir de este? Consulta [SPEC.md](SPEC.md): arquitectura, contrato del núcleo,
+protocolo online y lista de verificación.
+
 ## Cargar un juego
 
 Elige un juego en la **lista desplegable** de la barra superior: la ROM se descarga desde su URL y arranca.
