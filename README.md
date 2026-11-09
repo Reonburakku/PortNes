@@ -6,9 +6,23 @@ Emulador de NES para el navegador, basado en [jsnes](https://github.com/bfirsh/j
 
 ## Cargar un juego
 
-Abre la página y carga tu propia ROM de NES (`.nes`) con el botón **ROM…** o arrastrándola.
-No se incluye ninguna ROM en este repositorio (copyright). Se guarda solo en tu navegador (IndexedDB)
-para no tener que cargarla cada vez; **Olvidar ROM** la borra.
+Elige un juego en la **lista desplegable** de la barra superior: la ROM se descarga desde su URL y arranca.
+También puedes elegir **Abrir archivo .nes…** al final de la lista, o arrastrar un `.nes` a la página.
+El último juego se guarda en tu navegador (IndexedDB) para arrancar directamente; **Olvidar ROM** lo borra.
+
+### Añadir juegos
+
+Edita [`games.json`](games.json) y añade una entrada con el nombre que se mostrará y la URL de la ROM:
+
+```json
+{ "name": "Super Juego", "url": "https://nesroms.blob.core.windows.net/nes/SuperJuego.nes" }
+```
+
+El orden dentro del archivo no importa: la lista se ordena alfabéticamente al cargar la página (sin distinguir
+mayúsculas ni tildes). El servidor de las ROMs debe permitir CORS para el dominio de la página.
+
+En partidas online, el enlace de invitación incluye el juego (`?sala=CODIGO&juego=Nombre`), así que el
+Jugador 2 lo carga automáticamente.
 
 ## Partida online (2 jugadores)
 
@@ -60,4 +74,5 @@ Mandos USB/Bluetooth funcionan vía Gamepad API (primer mando = J1, segundo = J2
 - `vendor/jsnes.min.js`: núcleo del emulador (CPU 6502, PPU, APU, mapper 2/UxROM)
 - `vendor/peerjs.min.js`: conexión WebRTC para el modo online
 - `rom/contra.nes`: tu ROM, solo en local (ignorada por git)
+- `games.json`: catálogo de juegos (nombre + URL de la ROM)
 - `server.js`: servidor estático mínimo sin dependencias

@@ -26,6 +26,12 @@
   .vol button { border: 0; background: transparent; padding: 4px 6px; font-size: 15px; line-height: 1; }
   .vol input[type=range] { width: 90px; accent-color: var(--accent); cursor: pointer; margin: 0; }
   #volLabel { font: 12px ui-monospace, monospace; color: var(--muted); min-width: 3.5ch; text-align: right; }
+  #gameSelect { background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 6px;
+    padding: 6px 28px 6px 10px; font: inherit; cursor: pointer; max-width: 220px; appearance: none;
+    background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+    background-position: calc(100% - 15px) 55%, calc(100% - 10px) 55%; background-size: 5px 5px; background-repeat: no-repeat; }
+  #gameSelect:hover, #gameSelect:focus { border-color: var(--accent); outline: none; }
+  #gameSelect option { background: var(--panel); color: var(--text); }
   button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
   button:disabled { opacity: .45; cursor: not-allowed; }
   #netStatus { font-size: 12px; padding: 4px 8px; border-radius: 999px; border: 1px solid var(--ok); color: var(--ok); }
@@ -98,7 +104,10 @@
     <span id="volLabel">80%</span>
   </div>
   <button id="btnFull" title="F">Pantalla completa</button>
-  <label class="btn">ROM… <input id="fileInput" type="file" accept=".nes" hidden></label>
+  <select id="gameSelect" aria-label="Juego" title="Elegir juego">
+    <option value="" disabled selected>Elegir juego…</option>
+  </select>
+  <input id="fileInput" type="file" accept=".nes" hidden>
   <button id="btnForget" title="Borra la ROM guardada en este navegador">Olvidar ROM</button>
 </header>
 
@@ -268,10 +277,12 @@
   let romKey = 'contra', romHash = null;
   function startRom(bytes, name) {
     if (bytes[0] !== 0x4E || bytes[1] !== 0x45 || bytes[2] !== 0x53 || bytes[3] !== 0x1A) {
-      showOverlay('El archivo no es una ROM iNES válida.'); return;
+      showOverlay('El archivo no es una ROM iNES válida.'); return false;
     }
     try { nes.loadROM(bytesToBinaryString(bytes)); }
-    catch (e) { showOverlay('No se pudo cargar la ROM: ' + e.message); return; }
+    catch (e) { showOverlay('No se pudo cargar la ROM: ' + e.message); return false; }
+    currentGame = findGame(name) ? findGame(name).name : null;
+    syncGameSelect();
     romKey = (name || 'rom').toLowerCase();
     romHash = sha256(bytes);
     running = true; paused = false; acc = 0;
@@ -281,7 +292,74 @@
     ['keydown','pointerdown'].forEach(ev => window.addEventListener(ev, go));
     // Enlace de invitación (?sala=CODIGO): unirse automáticamente al tener la ROM
     if (inviteCode && !net.peer) { const c = inviteCode; inviteCode = null; openPanel(); joinRoom(c); }
+    return true;
   }
+
+  // ---------- Catálogo de juegos (games.json), siempre en orden alfabético ----------
+  let games = [], currentGame = null;
+  const collator = new Intl.Collator('es', { sensitivity: 'base', numeric: true });
+  const findGame = name => name ? games.find(g => collator.compare(g.name, name) === 0) : null;
+
+  function loadCatalog() {
+    return fetch('games.json', { cache: 'no-cache' })
+      .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
+      .then(list => {
+        games = (Array.isArray(list) ? list : [])
+          .filter(g => g && typeof g.name === 'string' && typeof g.url === 'string')
+          .sort((a, b) => collator.compare(a.name, b.name));
+      })
+      .catch(e => { console.warn('No se pudo leer games.json', e); games = []; })
+      .then(buildGameSelect);
+  }
+  function buildGameSelect() {
+    const sel = $('gameSelect');
+    sel.innerHTML = '';
+    const ph = new Option(games.length ? 'Elegir juego…' : 'Sin juegos', '');
+    ph.disabled = true; sel.add(ph);
+    for (const g of games) sel.add(new Option(g.name, g.name));
+    const sep = new Option('──────────', ''); sep.disabled = true; sel.add(sep);
+    sel.add(new Option('Abrir archivo .nes…', '__file'));
+    syncGameSelect();
+  }
+  function syncGameSelect() {
+    const sel = $('gameSelect');
+    sel.value = currentGame && findGame(currentGame) ? currentGame : '';
+    sel.title = currentGame ? 'Jugando a ' + currentGame : 'Elegir juego';
+  }
+
+  async function loadGame(name) {
+    const g = findGame(name);
+    if (!g) { toast('Juego no encontrado: ' + name); syncGameSelect(); return false; }
+    if (net.peer) { toast('Sal de la partida online antes de cambiar de juego'); syncGameSelect(); return false; }
+    showOverlay('Descargando <b>' + escapeHtml(g.name) + '</b>…');
+    try {
+      const r = await fetch(g.url);
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const bytes = new Uint8Array(await r.arrayBuffer());
+      if (!startRom(bytes, g.name)) { syncGameSelect(); return false; }
+      storeRom(bytes, g.name);
+      return true;
+    } catch (e) {
+      console.warn('Descarga fallida', g.url, e);
+      showOverlay('No se pudo descargar <b>' + escapeHtml(g.name) + '</b>.<br><small>' +
+        (e instanceof TypeError ? 'El servidor de ROMs no permite la descarga desde esta página (CORS) o no hay conexión.' : escapeHtml(e.message)) +
+        '</small>' + (running ? '<br><br><small>Pulsa cualquier tecla o toca la pantalla para seguir con el juego actual.</small>' : ''));
+      if (running) {
+        const close = () => { hideOverlay(); ['keydown', 'pointerdown'].forEach(ev => window.removeEventListener(ev, close)); };
+        setTimeout(() => ['keydown', 'pointerdown'].forEach(ev => window.addEventListener(ev, close)), 0);
+      }
+      syncGameSelect();
+      return false;
+    }
+  }
+  const escapeHtml = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+  $('gameSelect').addEventListener('change', e => {
+    const v = e.target.value;
+    e.target.blur();                       // devolver el teclado al juego
+    if (v === '__file') { syncGameSelect(); $('fileInput').click(); return; }
+    if (v) loadGame(v);
+  });
 
   // ROM recordada en este navegador (IndexedDB; nunca sale del equipo)
   function idb() {
@@ -303,19 +381,23 @@
   const getStoredRom = () => idbOp('readonly', s => s.get('last')).catch(() => null);
   const forgetRom = () => idbOp('readwrite', s => s.delete('last')).catch(() => {});
 
-  const NO_ROM_MSG = '<b>Carga una ROM de NES (.nes)</b><br>Arrástrala aquí o usa el botón <b>ROM…</b><br>' +
-    '<small>Las ROM no se incluyen por motivos de copyright. Se guarda solo en tu navegador para la próxima vez.</small>';
+  const NO_ROM_MSG = '<b>Elige un juego en la lista</b><br>o arrastra aquí un archivo .nes';
 
-  let inviteCode = (new URLSearchParams(location.search).get('sala') || '').toUpperCase().replace(/[^A-Z0-9]/g, '') || null;
+  const params = new URLSearchParams(location.search);
+  let inviteCode = (params.get('sala') || '').toUpperCase().replace(/[^A-Z0-9]/g, '') || null;
+  const inviteGame = params.get('juego');
 
-  // Orden: rom/contra.nes junto a la página (uso local) → ROM recordada → pedir archivo
-  fetch('rom/contra.nes')
-    .then(r => { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); })
-    .then(ab => startRom(new Uint8Array(ab), 'contra'))
-    .catch(() => getStoredRom().then(rec => {
-      if (rec && rec.bytes) startRom(new Uint8Array(rec.bytes), rec.name);
-      else showOverlay(NO_ROM_MSG + (inviteCode ? '<br><br><b>Te han invitado a una partida online.</b> Carga la ROM para unirte.' : ''));
-    }));
+  // Arranque: juego de la invitación → rom/contra.nes local → último juego usado → pedir juego
+  loadCatalog().then(async () => {
+    if (inviteGame && findGame(inviteGame) && await loadGame(inviteGame)) return;
+    try {
+      const r = await fetch('rom/contra.nes');
+      if (r.ok && startRom(new Uint8Array(await r.arrayBuffer()), 'Contra')) return;
+    } catch (e) {}
+    const rec = await getStoredRom();
+    if (rec && rec.bytes && startRom(new Uint8Array(rec.bytes), rec.name)) return;
+    showOverlay(NO_ROM_MSG + (inviteCode ? '<br><br><b>Te han invitado a una partida online.</b> Elige el mismo juego para unirte.' : ''));
+  });
 
   function loadFile(file) {
     if (!file) return;
@@ -340,7 +422,7 @@
     Numpad8: [2, B.BUTTON_UP], Numpad5: [2, B.BUTTON_DOWN], Numpad4: [2, B.BUTTON_LEFT], Numpad6: [2, B.BUTTON_RIGHT],
     Numpad1: [2, B.BUTTON_B], Numpad2: [2, B.BUTTON_A], NumpadEnter: [2, B.BUTTON_START], NumpadAdd: [2, B.BUTTON_SELECT],
   };
-  const typing = e => e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA');
+  const typing = e => e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName);
   window.addEventListener('keydown', e => {
     if (typing(e)) return;
     const m = KEYMAP[e.code];
@@ -555,7 +637,8 @@
     if (net.role !== 'host') return;
     const mine = await romHash;
     if (m.rom !== mine) {
-      send({ t: 'err', msg: 'Tu ROM es distinta a la del anfitrión. Ambos necesitáis exactamente la misma ROM.' });
+      send({ t: 'err', msg: 'Tu ROM es distinta a la del anfitrión. Ambos necesitáis exactamente la misma ROM' +
+        (currentGame ? ': el Jugador 1 está jugando a «' + currentGame + '».' : '.') });
       setTimeout(() => { if (net.conn) net.conn.close(); }, 300);
       $('waitMsg').textContent = 'Un jugador intentó unirse con una ROM distinta. Esperando al Jugador 2…';
       return;
@@ -620,7 +703,8 @@
     updateNetUI();
     peer.on('open', () => {
       $('roomCode').textContent = code;
-      const url = new URL(location.href); url.search = '?sala=' + code; url.hash = '';
+      const url = new URL(location.href); url.hash = '';
+      url.search = '?sala=' + code + (currentGame ? '&juego=' + encodeURIComponent(currentGame) : '');
       $('roomLink').value = url.toString();
       $('waitMsg').textContent = 'Esperando al Jugador 2…';
     });
