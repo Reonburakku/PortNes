@@ -395,6 +395,11 @@
   // =====================================================================
   const ROOM_PREFIX = 'contra-web-reonburakku-';
   const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  // STUN públicos (los TURN que PeerJS trae por defecto ya no existen: sus DNS no resuelven)
+  const PEER_OPTS = { config: { iceServers: [
+    { urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"] },
+    { urls: "stun:stun.cloudflare.com:3478" },
+  ] } };
   const CHUNK = 15000;            // PeerJS (JSON) rechaza mensajes de más de ~16 KB
   const net = {
     peer: null, conn: null, role: null, code: null, active: false, syncing: false,
@@ -560,6 +565,36 @@
     conn.on('error', err => console.warn('conn', err));
   }
 
+  // --- Diagnóstico de la conexión directa (ICE) ---
+  const ICE_HELP = 'Suele deberse a la protección WebRTC del navegador (en Brave: brave://settings/privacy → ' +
+    '«Política de gestión de IP de WebRTC» → «Predeterminada»), a una VPN, un firewall o una red que bloquea P2P.';
+  function watchIce(conn, onState) {
+    let tries = 0;
+    const attach = () => {
+      const pc = conn.peerConnection;
+      if (!pc) { if (tries++ < 50) setTimeout(attach, 100); return; }
+      const report = () => { console.info('[online] ICE', pc.iceConnectionState); onState(pc.iceConnectionState, pc); };
+      pc.addEventListener('iceconnectionstatechange', report);
+      pc.addEventListener('icecandidateerror', e => console.warn('[online] ICE candidate error', e.url, e.errorCode, e.errorText));
+      report();
+    };
+    attach();
+  }
+  async function iceDetails(conn) {
+    const pc = conn && conn.peerConnection;
+    if (!pc) return 'sin conexión WebRTC';
+    try {
+      const loc = new Set(), rem = new Set();
+      (await pc.getStats()).forEach(r => {
+        const d = r.candidateType + (r.protocol ? '/' + r.protocol : '');
+        if (r.type === 'local-candidate') loc.add(d);
+        if (r.type === 'remote-candidate') rem.add(d);
+      });
+      return 'estado ' + pc.iceConnectionState + '; candidatos propios: ' + ([...loc].join(', ') || 'ninguno') +
+        '; del otro: ' + ([...rem].join(', ') || 'ninguno');
+    } catch (e) { return 'estado ' + pc.iceConnectionState; }
+  }
+
   function newCode() { let c = ''; for (let i = 0; i < 5; i++) c += CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)]; return c; }
 
   function hostRoom() {
@@ -567,7 +602,7 @@
     if (typeof Peer === 'undefined') { netError('No se pudo cargar la librería de red.'); return; }
     netError('');
     const code = newCode();
-    const peer = new Peer(ROOM_PREFIX + code);
+    const peer = new Peer(ROOM_PREFIX + code, PEER_OPTS);
     net.peer = peer; net.role = 'host'; net.me = 1; net.code = code;
     $('roomCode').textContent = '·····';
     $('waitMsg').textContent = 'Creando sala…';
@@ -581,7 +616,19 @@
     peer.on('connection', conn => {
       if (net.conn && net.conn.open) { conn.on('open', () => { conn.send({ t: 'err', msg: 'La sala ya está llena.' }); setTimeout(() => conn.close(), 300); }); return; }
       bindConn(conn);
-      conn.on('open', () => { $('waitMsg').textContent = 'Jugador 2 conectándose…'; startPing(); });
+      $('waitMsg').textContent = 'Jugador 2 encontrado. Estableciendo conexión directa…';
+      const giveUp = async () => {
+        if (net.conn !== conn || conn.open) return;
+        const d = await iceDetails(conn);
+        console.warn('[online] conexión fallida:', d);
+        $('waitMsg').textContent = 'El Jugador 2 llegó a la sala pero no se pudo abrir la conexión directa. ' + ICE_HELP +
+          ' (' + d + '). Sigues esperando a que alguien se una.';
+        try { conn.close(); } catch (e) {}
+        net.conn = null;
+      };
+      setTimeout(giveUp, 22000);
+      watchIce(conn, state => { if (state === 'failed') giveUp(); });
+      conn.on('open', () => { $('waitMsg').textContent = 'Conectado. Comprobando ROM del Jugador 2…'; startPing(); });
     });
     peer.on('error', err => {
       if (err.type === 'unavailable-id') { peer.destroy(); net.peer = null; hostRoom(); return; }
@@ -597,14 +644,32 @@
     if (!running) { netError('Carga primero la ROM.'); return; }
     if (typeof Peer === 'undefined') { netError('No se pudo cargar la librería de red.'); return; }
     netError('');
-    const peer = new Peer();
+    const peer = new Peer(PEER_OPTS);
     net.peer = peer; net.role = 'guest'; net.me = 2; net.code = code;
-    $('liveMsg').textContent = 'Conectando con la sala ' + code + '…';
+    $('liveMsg').textContent = 'Conectando con el servidor de salas…';
     updateNetUI();
+    const fail = async (conn, why) => {
+      if (net.peer !== peer) return;
+      const d = await iceDetails(conn);
+      console.warn('[online] conexión fallida:', why, d);
+      netError('No se pudo abrir la conexión directa con el Jugador 1 (' + why + '). ' + ICE_HELP + ' Detalles: ' + d + '.');
+      endNet();
+    };
+    const timer = setTimeout(() => {
+      if (net.peer !== peer || (net.conn && net.conn.open)) return;
+      if (!peer.open) { netError('No se pudo contactar con el servidor de salas (0.peerjs.com). Revisa la conexión, bloqueadores o extensiones.'); endNet(); }
+      else fail(net.conn, 'tiempo agotado');
+    }, 20000);
     peer.on('open', () => {
+      $('liveMsg').textContent = 'Buscando la sala ' + code + '…';
       const conn = peer.connect(ROOM_PREFIX + code, { reliable: true, serialization: 'json' });
       bindConn(conn);
+      watchIce(conn, state => {
+        if (state === 'checking' && !conn.open) $('liveMsg').textContent = 'Sala ' + code + ' encontrada. Estableciendo conexión directa…';
+        if (state === 'failed' && !conn.open) { clearTimeout(timer); fail(conn, 'ICE failed'); }
+      });
       conn.on('open', async () => {
+        clearTimeout(timer);
         $('liveMsg').textContent = 'Conectado. Comprobando ROM…';
         send({ t: 'hello', rom: await romHash });
         startPing();
